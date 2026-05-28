@@ -1,0 +1,2 @@
+# data/ holds the persisted Chroma + BM25 indices once you run scripts/ingest.py.
+# It is gitignored by default so you ingest locally instead of committing a binary index.

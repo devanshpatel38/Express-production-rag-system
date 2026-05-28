@@ -1,0 +1,84 @@
+{
+  "dataset_version": "1.0",
+  "description": "Hand-curated eval set for Express.js docs RAG. Each item has a question and a ground-truth answer plus reference source paths. Ground-truth answers are intentionally short - we score on whether the model captures the key fact, not exact wording.",
+  "items": [
+    {
+      "id": "routing-basic",
+      "question": "How do I define a GET route in Express?",
+      "ground_truth": "Use app.get(path, handler), where path is a string or pattern and handler is a function taking req and res. Example: app.get('/', (req, res) => res.send('hello')).",
+      "reference_sources": ["en/starter/basic-routing.md", "en/guide/routing.md"]
+    },
+    {
+      "id": "middleware-order",
+      "question": "Does the order in which middleware is defined matter?",
+      "ground_truth": "Yes. Middleware functions execute in the order they are defined via app.use or the routing methods. Earlier middleware can short-circuit later ones by not calling next().",
+      "reference_sources": ["en/guide/using-middleware.md", "en/guide/writing-middleware.md"]
+    },
+    {
+      "id": "error-middleware-signature",
+      "question": "What is the signature of an Express error-handling middleware?",
+      "ground_truth": "Error-handling middleware takes four arguments: (err, req, res, next). The four-argument signature is what Express uses to identify it as an error handler.",
+      "reference_sources": ["en/guide/error-handling.md"]
+    },
+    {
+      "id": "req-query-vs-params",
+      "question": "What is the difference between req.query and req.params?",
+      "ground_truth": "req.params holds route parameters parsed from the URL path (e.g. /users/:id), while req.query holds the parsed query-string values (e.g. ?sort=asc).",
+      "reference_sources": ["en/4x/api.md", "en/guide/routing.md"]
+    },
+    {
+      "id": "static-files",
+      "question": "How do I serve static files from a directory called public?",
+      "ground_truth": "Use the built-in middleware express.static: app.use(express.static('public')). You can also mount it at a virtual path: app.use('/static', express.static('public')).",
+      "reference_sources": ["en/starter/static-files.md"]
+    },
+    {
+      "id": "json-body-parser",
+      "question": "How do I parse JSON request bodies in Express 4.16+?",
+      "ground_truth": "Use the built-in express.json() middleware: app.use(express.json()). The old body-parser package is no longer required for JSON.",
+      "reference_sources": ["en/4x/api.md"]
+    },
+    {
+      "id": "router-mounting",
+      "question": "How do I create a modular sub-router and mount it under a path prefix?",
+      "ground_truth": "Create a router with express.Router(), attach routes to it, then mount it on the app with app.use('/prefix', router). Each router is a mini application.",
+      "reference_sources": ["en/guide/routing.md", "en/4x/api.md"]
+    },
+    {
+      "id": "next-error",
+      "question": "How do I pass an error to Express's error handler from a middleware?",
+      "ground_truth": "Call next(err) with any non-null argument. Express skips remaining non-error middleware and invokes the first error-handling middleware in the stack.",
+      "reference_sources": ["en/guide/error-handling.md"]
+    },
+    {
+      "id": "production-best-practices",
+      "question": "What are some recommended things to do for an Express app in production?",
+      "ground_truth": "Set NODE_ENV=production, use a process manager (PM2, systemd) or run multiple instances behind a load balancer, gzip responses, don't use synchronous functions, log properly, and handle exceptions.",
+      "reference_sources": ["en/advanced/best-practice-performance.md"]
+    },
+    {
+      "id": "template-engine",
+      "question": "How do I configure a template engine like Pug in Express?",
+      "ground_truth": "Set the view engine and views directory via app.set('view engine', 'pug') and app.set('views', './views'). Then render templates with res.render('viewName', locals).",
+      "reference_sources": ["en/guide/using-template-engines.md"]
+    },
+    {
+      "id": "cookie-parsing",
+      "question": "Does Express parse cookies out of the box?",
+      "ground_truth": "No - Express does not include a built-in cookie parser. Use the cookie-parser middleware (or your own) to populate req.cookies.",
+      "reference_sources": ["en/resources/middleware/cookie-parser.md", "en/4x/api.md"]
+    },
+    {
+      "id": "trust-proxy",
+      "question": "What does setting 'trust proxy' do in Express?",
+      "ground_truth": "It tells Express to honour the X-Forwarded-* headers (For, Proto, Host) set by an upstream reverse proxy, so req.ip and req.protocol reflect the original client rather than the proxy.",
+      "reference_sources": ["en/guide/behind-proxies.md", "en/4x/api.md"]
+    },
+    {
+      "id": "off-topic-control",
+      "question": "What is the best Italian restaurant in Ahmedabad?",
+      "ground_truth": "This question is unrelated to Express.js. The assistant should decline or redirect rather than hallucinate an answer.",
+      "reference_sources": []
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+name: rag-eval
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/eval.yml"
+  workflow_dispatch:
+
+jobs:
+  eval:
+    name: Ragas eval suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      pull-requests: write   # ← add this
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # The Express docs repo is small (~7MB) so we clone it fresh per run.
+      # This keeps the eval against current docs and avoids committing them.
+      - name: Clone Express docs
+        run: |
+          if [ -d "external/expressjs.com/en" ]; then
+            echo "Express docs already present in repo — skipping clone."
+          else
+            echo "Cloning fresh..."
+            git clone --depth 1 https://github.com/expressjs/expressjs.com.git external/expressjs.com
+          fi
+
+      - name: Build index
+        working-directory: backend
+        env:
+          EMBEDDING_BACKEND: local
+        run: python -m scripts.ingest --source ../external/expressjs.com/en
+
+      - name: Run eval
+        working-directory: backend
+        env:
+          LLM_PROVIDER: openai
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-4o-mini
+          GEMINI_API_KEY: ""
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+          RERANKER_ENABLED: ${{ secrets.COHERE_API_KEY != '' && 'true' || 'false' }}
+          EMBEDDING_BACKEND: local
+          ANONYMIZED_TELEMETRY: "False"
+          CHROMA_TELEMETRY: "false"
+        run: python -m eval.run_eval --check-thresholds --output eval/reports/ci.json
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: backend/eval/reports/ci.json
+          retention-days: 30
+
+      - name: Summarise on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'backend/eval/reports/ci.json';
+            if (!fs.existsSync(path)) {
+              return;
+            }
+            const report = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const agg = report.aggregate;
+            const lines = [
+              '## RAG eval results',
+              '',
+              `Retrieval hit-rate: \`${(report.retrieval_hit_rate * 100).toFixed(1)}%\``,
+              `Latency p50: \`${report.latency_p50_ms} ms\``,
+              '',
+              '| Metric | Score |',
+              '| --- | --- |',
+              ...Object.entries(agg).map(([k, v]) => `| ${k} | ${Number(v).toFixed(3)} |`),
+            ];
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: lines.join('\n'),
+            });

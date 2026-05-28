@@ -1,0 +1,12 @@
+node_modules
+.DS_Store
+*.sublime*
+_site
+.sass-cache
+*.iml
+**/.idea
+**/Thumbs.db
+
+.jekyll-metadata
+vendor
+.bundle

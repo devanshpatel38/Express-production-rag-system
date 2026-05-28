@@ -1,0 +1,28 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.2
+pydantic-settings==2.6.0
+python-dotenv==1.0.1
+httpx==0.27.2
+
+# RAG pipeline
+chromadb==0.5.15
+rank-bm25==0.2.2
+sentence-transformers==3.2.1
+numpy==1.26.4
+
+# LLM providers
+openai==1.54.3
+google-generativeai==0.8.3
+
+# Reranker (Cohere has a generous free tier)
+cohere==5.11.4
+
+# Ingestion / parsing
+markdown-it-py==3.0.0
+beautifulsoup4==4.12.3
+
+# Eval
+ragas==0.2.6
+datasets==3.0.2
+pandas==2.2.3
