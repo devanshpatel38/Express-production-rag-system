@@ -5,65 +5,86 @@ import remarkGfm from "remark-gfm";
 import type { Source } from "@/lib/api";
 
 interface Props {
-  role: "user" | "assistant";
   content: string;
   sources?: Source[];
   latency_ms?: number;
+  reranked?: boolean;
+  streaming?: boolean;
+  isPanelOpen?: boolean;
+  onOpenSources?: () => void;
 }
 
-export function MessageBubble({ role, content, sources, latency_ms }: Props) {
-  const isUser = role === "user";
+function ChevIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+      <path d="M2.5 3.5L5 6L7.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function MessageBubble({
+  content,
+  sources,
+  latency_ms,
+  reranked,
+  streaming,
+  isPanelOpen,
+  onOpenSources,
+}: Props) {
+  if (streaming) {
+    return (
+      <div className="msg msg-assistant msg-animate">
+        <div className="assistant-head">
+          <span className="role">retrieving</span>
+          <span>·</span>
+          <span className="latency">querying index…</span>
+        </div>
+        <div className="assistant-body">
+          <p style={{ color: "var(--text-3)" }}>
+            <span className="dots">
+              <span />
+              <span />
+              <span />
+            </span>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <article className="animate-fade-up">
-      <header className="flex items-baseline gap-3 mb-2">
-        <span
-          className={
-            "font-serif text-sm tracking-wide " + (isUser ? "text-muted" : "text-ink")
-          }
-        >
-          {isUser ? "You" : "Express Docs"}
-        </span>
-        <span className="h-px flex-1 bg-rule" aria-hidden />
+    <div className="msg msg-assistant msg-animate">
+      <div className="assistant-head">
+        <span className="role">assistant</span>
+        <span>·</span>
         {latency_ms !== undefined && (
-          <span className="text-[11px] font-mono text-muted">{latency_ms} ms</span>
+          <span className="latency">
+            <strong>{latency_ms}ms</strong>
+            {sources && <> · {sources.length} chunks</>}
+          </span>
         )}
-      </header>
-
-      <div
-        className={
-          "prose-answer text-[15px] " +
-          (isUser ? "text-ink/85" : "text-ink")
-        }
-      >
-        {isUser ? (
-          <p>{content}</p>
-        ) : (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        {reranked && (
+          <>
+            <span>·</span>
+            <span className="reranked">reranked</span>
+          </>
         )}
       </div>
 
+      <div className="assistant-body">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      </div>
+
       {sources && sources.length > 0 && (
-        <details className="mt-4 group">
-          <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.15em] text-muted hover:text-ink">
-            Sources · {sources.length}
-          </summary>
-          <ol className="mt-3 space-y-2">
-            {sources.map((s, i) => (
-              <li key={s.chunk_id} className="border-l-2 border-accent/60 pl-3">
-                <div className="flex items-baseline gap-2 text-[11px] font-mono text-muted">
-                  <span className="text-accent font-bold">[#{i + 1}]</span>
-                  <span>{s.source_path}</span>
-                  <span className="ml-auto">score {s.score.toFixed(3)}</span>
-                </div>
-                <div className="text-[12.5px] text-ink/75 mt-1 italic font-serif">
-                  {s.title} — {s.snippet}
-                </div>
-              </li>
-            ))}
-          </ol>
-        </details>
+        <button
+          className={"sources-trigger" + (isPanelOpen ? " is-active" : "")}
+          onClick={onOpenSources}
+        >
+          <span className="count">{sources.length}</span>
+          sources
+          <ChevIcon />
+        </button>
       )}
-    </article>
+    </div>
   );
 }

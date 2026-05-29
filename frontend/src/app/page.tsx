@@ -1,294 +1,185 @@
-"use client";
-
-import { useEffect, useRef, useState } from "react";
-import { Globe, ExternalLink } from "lucide-react";
-import { chat, type ChatMessage, type Source } from "@/lib/api";
-import { MessageBubble } from "@/components/MessageBubble";
-import { StatusPill } from "@/components/StatusPill";
-
-interface Turn extends ChatMessage {
-  sources?: Source[];
-  latency_ms?: number;
-}
-
-const STARTER_QUESTIONS = [
-  "How do I define a GET route?",
-  "What is the difference between req.query and req.params?",
-  "How do I write error-handling middleware?",
-  "Serve static files from a directory called public",
-];
-
-const TECH_TAGS = [
-  "Next.js",
-  "TypeScript",
-  "RAG",
-  "BM25 + Dense",
-  "Cross-Encoder",
-];
+import Link from "next/link";
+import Image from "next/image";
 
 const GITHUB_URL = "https://github.com/devanshpatel38/Express-production-rag-system";
+
+async function getHealth() {
+  try {
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+    const res = await fetch(`${base}/health`, { next: { revalidate: 60 } });
+    if (!res.ok) return null;
+    return res.json() as Promise<{ indexed_chunks: number; llm_provider: string }>;
+  } catch {
+    return null;
+  }
+}
 const PORTFOLIO_URL = "https://portfolio-website-umber-ten-90.vercel.app/#";
 
-export default function Page() {
-  const [turns, setTurns] = useState<Turn[]>([]);
-  const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [useReranker, setUseReranker] = useState(true);
-  const endRef = useRef<HTMLDivElement>(null);
+const QUESTIONS = [
+  { kind: "Routing",   text: "How do I set up middleware in Express?",             chunks: 4 },
+  { kind: "Errors",    text: "How does error-handling middleware work?",            chunks: 4 },
+  { kind: "Static",    text: "How do I serve static files from a directory?",      chunks: 3 },
+  { kind: "Lifecycle", text: "What's the difference between app.use and app.get?", chunks: 3 },
+];
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [turns.length, busy]);
-
-  function GithubIcon({ size = 13 }: { size?: number }) {
-    return (
-      <svg
-        width={size}
-        height={size}
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        aria-hidden="true"
-      >
-        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
-      </svg>
-    );
-  }
-
-  async function send(query: string) {
-    const q = query.trim();
-    if (!q || busy) return;
-    setError(null);
-    const newTurns: Turn[] = [...turns, { role: "user", content: q }];
-    setTurns(newTurns);
-    setInput("");
-    setBusy(true);
-    try {
-      const history: ChatMessage[] = newTurns.map(({ role, content }) => ({
-        role,
-        content,
-      }));
-      const resp = await chat(q, history.slice(0, -1), { useReranker });
-      setTurns((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: resp.answer,
-          sources: resp.sources,
-          latency_ms: resp.latency_ms,
-        },
-      ]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    send(input);
-  }
-
+function ArrowIcon() {
   return (
-    <main className="relative mx-auto max-w-3xl px-5 sm:px-8 pt-10 pb-40 min-h-screen">
-      {/* Masthead */}
-      <header className="mb-12 relative">
-        {/* Top bar: issue label + branding links + status */}
-        <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.22em] text-muted">
-          <span>Volume I · Issue 01</span>
+    <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
+      <path d="M3 7h8M7 3l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
-          <div className="flex items-center gap-5">
-            <a
-              href={GITHUB_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 hover:text-ink transition-colors"
-              aria-label="GitHub repository"
-            >
-              <GithubIcon size={12} />
-              <span className="hidden sm:inline">Source</span>
-            </a>
-            <a
-              href={PORTFOLIO_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 hover:text-ink transition-colors"
-              aria-label="Portfolio website"
-            >
-              <Globe size={12} strokeWidth={1.8} />
-              <span className="hidden sm:inline">Portfolio</span>
-            </a>
-            <StatusPill />
-          </div>
-        </div>
+function GithubIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.5c-2.22.48-2.69-.94-2.69-.94-.36-.92-.89-1.17-.89-1.17-.72-.49.06-.48.06-.48.8.06 1.23.83 1.23.83.72 1.23 1.88.88 2.34.67.07-.52.28-.88.51-1.08-1.77-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.13 0 0 .67-.22 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.11.16 1.93.08 2.13.52.56.83 1.28.83 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38C13.71 14.53 16 11.54 16 8c0-4.42-3.58-8-8-8z" />
+    </svg>
+  );
+}
 
-        <div className="h-px bg-ink mt-2 mb-6" />
-
-        <h1 className="font-serif text-5xl sm:text-6xl leading-[0.95] tracking-tight">
-          Express,
-          <br />
-          <span className="italic text-accent">in conversation</span>.
-        </h1>
-
-        <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-ink/80">
-          A retrieval-augmented chat over the official{" "}
-          <a
-            href="https://github.com/expressjs/expressjs.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline decoration-accent/60 underline-offset-4 hover:text-accent"
-          >
-            Express.js documentation
-          </a>
-          . Hybrid search (dense + BM25), cross-encoder reranking, grounded
-          answers with citations.
-        </p>
-
-        {/* Tech stack pills */}
-        <div className="flex flex-wrap gap-2 mt-5">
-          {TECH_TAGS.map((tag) => (
-            <span
-              key={tag}
-              className="text-[10px] font-mono uppercase tracking-[0.18em] border border-rule px-2 py-0.5 text-muted"
-            >
-              {tag}
+export default async function LandingPage() {
+  const health = await getHealth();
+  const chunkCount = health?.indexed_chunks?.toLocaleString() ?? "—";
+  return (
+    <>
+      {/* ─── Nav ─── */}
+      <nav className="lp-nav">
+        <div className="lp-nav-inner">
+          <Link href="/" className="lp-brand">
+            <span className="lp-brand-logo">
+              <Image src="/cogito-logo-short.svg" alt="" width={26} height={14} />
             </span>
-          ))}
-        </div>
-
-        {/* Inline CTA links — useful for recruiters reading the UI */}
-        <div className="flex items-center gap-5 mt-5">
-          <a
-            href={GITHUB_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-[12px] font-mono underline underline-offset-4 decoration-rule hover:text-accent hover:decoration-accent transition-colors"
-          >
-            <GithubIcon size={12} />
-            View on GitHub
-            <ExternalLink size={10} strokeWidth={1.8} className="opacity-60" />
-          </a>
-          <a
-            href={PORTFOLIO_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-[12px] font-mono underline underline-offset-4 decoration-rule hover:text-accent hover:decoration-accent transition-colors"
-          >
-            <Globe size={13} strokeWidth={1.8} />
-            devanshpatel.com
-            <ExternalLink size={10} strokeWidth={1.8} className="opacity-60" />
-          </a>
-        </div>
-      </header>
-
-      {/* Starter cards (only before the first turn) */}
-      {turns.length === 0 && (
-        <section className="mb-12">
-          <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted mb-3">
-            Try
+            <span>Express Docs</span>
+            <span className="lp-brand-tag">RAG</span>
+          </Link>
+          <div className="lp-nav-links">
+            <a href="#how-it-works" className="lp-nav-link hide-sm">How it works</a>
+            <a href="https://expressjs.com" target="_blank" rel="noopener noreferrer" className="lp-nav-link hide-sm">Express.js docs</a>
+            <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="lp-nav-link hide-sm">GitHub</a>
+            <Link href="/chat" className="lp-nav-cta">
+              Open chat <ArrowIcon />
+            </Link>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {STARTER_QUESTIONS.map((q) => (
-              <button
-                key={q}
-                onClick={() => send(q)}
-                className="text-left font-serif text-[15px] leading-snug border border-rule bg-paper/60 hover:bg-paper hover:border-accent transition-colors px-4 py-3 rounded-sm"
+        </div>
+      </nav>
+
+      {/* ─── Page body ─── */}
+      <main className="lp-page">
+
+        {/* Hero */}
+        <section className="lp-hero">
+          <div className="lp-eyebrow">
+            <span className="pulse" />
+            <strong>{chunkCount} chunks</strong>
+            <span className="chip-divider" />
+            <span className="mono">expressjs/express @ v5.0.1</span>
+          </div>
+          <h1 className="lp-hero-title">
+            Ask the Express.js docs{" "}
+            <span className="accent">in plain English.</span>
+          </h1>
+          <p className="lp-hero-sub">
+            A retrieval-augmented chat grounded in the official Express.js documentation.
+            Answers cite the exact file and line range, so you always know where they came from.
+          </p>
+          <div className="lp-hero-actions">
+            <Link href="/chat" className="lp-btn-primary">
+              Open the chat <ArrowIcon />
+            </Link>
+            <a href="#try-it" className="lp-btn-secondary">
+              Try a sample question
+            </a>
+          </div>
+        </section>
+
+        {/* Try it */}
+        <section className="lp-section" id="try-it">
+          <div className="lp-section-head">
+            <div className="lp-section-overline">Try it</div>
+            <h2 className="lp-section-title">Pick a question to see it in action</h2>
+            <p className="lp-section-sub">Selecting one opens the chat with that question pre-asked.</p>
+          </div>
+
+          <div className="lp-q-grid">
+            {QUESTIONS.map((q) => (
+              <Link
+                key={q.text}
+                href={`/chat?q=${encodeURIComponent(q.text)}`}
+                className="lp-q-card"
               >
-                <span className="text-accent mr-2">→</span>
-                {q}
-              </button>
+                <div className="lp-q-card-top">
+                  <span className="lp-q-kind">
+                    <span className="dot" />
+                    {q.kind}
+                  </span>
+                  <span className="lp-q-card-arrow">
+                    <ArrowIcon />
+                  </span>
+                </div>
+                <p className="lp-q-text">{q.text}</p>
+                <div className="lp-q-meta">
+                  <span>{q.chunks} chunks</span>
+                  <span className="sep" />
+                  <span>~1.1s latency</span>
+                  <span className="sep" />
+                  <span>reranked</span>
+                </div>
+              </Link>
             ))}
           </div>
         </section>
-      )}
 
-      {/* Conversation */}
-      <section className="space-y-10">
-        {turns.map((t, i) => (
-          <MessageBubble
-            key={i}
-            role={t.role}
-            content={t.content}
-            sources={t.sources}
-            latency_ms={t.latency_ms}
-          />
-        ))}
-        {busy && (
-          <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
-            retrieving<span className="animate-blink">_</span>
+        {/* How it works */}
+        <section className="lp-section" id="how-it-works" style={{ paddingTop: 0 }}>
+          <div className="lp-section-head">
+            <div className="lp-section-overline">How it works</div>
+            <h2 className="lp-section-title">Four steps, on every question</h2>
           </div>
-        )}
-        {error && (
-          <div className="border border-red-700/40 bg-red-50/40 px-4 py-3 text-sm text-red-900 rounded-sm">
-            {error}
+          <div className="lp-how">
+            <div className="lp-how-step">
+              <div className="lp-how-num"><strong>01</strong> Embed</div>
+              <div className="lp-how-title">Vector search</div>
+              <p className="lp-how-desc">Your query is embedded and matched against <code>{chunkCount}</code> indexed chunks of the Express docs.</p>
+            </div>
+            <div className="lp-how-step">
+              <div className="lp-how-num"><strong>02</strong> Retrieve</div>
+              <div className="lp-how-title">Top-20 candidates</div>
+              <p className="lp-how-desc">The closest chunks are pulled with their file path and line range preserved as metadata.</p>
+            </div>
+            <div className="lp-how-step">
+              <div className="lp-how-num"><strong>03</strong> Rerank</div>
+              <div className="lp-how-title">Semantic re-order</div>
+              <p className="lp-how-desc">A cross-encoder reranks for semantic fit. Optional — toggle off for raw <code>k-NN</code> results.</p>
+            </div>
+            <div className="lp-how-step">
+              <div className="lp-how-num"><strong>04</strong> Generate</div>
+              <div className="lp-how-title">Cited answer</div>
+              <p className="lp-how-desc">The model writes the answer grounded in the top chunks, with every claim citable to a source.</p>
+            </div>
           </div>
-        )}
-        <div ref={endRef} />
-      </section>
+        </section>
 
-      {/* Footer */}
-      <footer className="mt-20 border-t border-rule pt-6 flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.18em] text-muted">
-        <span>
-          Built by{" "}
-          <a
-            href={PORTFOLIO_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-ink transition-colors underline underline-offset-2"
-          >
-            Devansh Patel
-          </a>
-        </span>
-        <a
-          href={GITHUB_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 hover:text-ink transition-colors"
-        >
-          <GithubIcon size={12} />
-          View on GitHub
-        </a>
-      </footer>
+      </main>
 
-      {/* Composer (fixed bottom) */}
-      <form
-        onSubmit={onSubmit}
-        className="fixed inset-x-0 bottom-0 pointer-events-none"
-      >
-        <div className="pointer-events-auto mx-auto max-w-3xl px-5 sm:px-8 pb-6 pt-10 bg-gradient-to-t from-paper via-paper/95 to-transparent">
-          <div className="flex items-center justify-between mb-2">
-            <label className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.18em] text-muted cursor-pointer">
-              <input
-                type="checkbox"
-                checked={useReranker}
-                onChange={(e) => setUseReranker(e.target.checked)}
-                className="accent-accent"
-              />
-              reranker
-            </label>
-            <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted">
-              press ↵ to send
-            </span>
+      {/* ─── Footer ─── */}
+      <footer className="lp-footer">
+        <div className="lp-footer-inner">
+          <div className="lp-footer-left">
+            <span className="status-dot" />
+            <span>Index healthy · expressjs/express</span>
           </div>
-          <div className="flex gap-2 border border-ink bg-paper">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about routing, middleware, error handling…"
-              disabled={busy}
-              className="flex-1 bg-transparent px-4 py-3 outline-none font-serif text-[16px] placeholder:text-muted/70"
-            />
-            <button
-              type="submit"
-              disabled={busy || !input.trim()}
-              className="px-5 bg-ink text-paper font-mono text-[11px] uppercase tracking-[0.18em] disabled:opacity-40 hover:bg-accent transition-colors"
-            >
-              Ask
-            </button>
+          <div className="lp-footer-right">
+            <Link href="/chat">Chat</Link>
+            <span className="sep">·</span>
+            <a href="https://expressjs.com" target="_blank" rel="noopener noreferrer">Express.js</a>
+            <span className="sep">·</span>
+            <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">GitHub</a>
+            <span className="sep">·</span>
+            <a href={PORTFOLIO_URL} target="_blank" rel="noopener noreferrer">devanshpatel.com</a>
           </div>
         </div>
-      </form>
-    </main>
+      </footer>
+    </>
   );
 }
