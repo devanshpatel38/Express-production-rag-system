@@ -1123,3 +1123,152 @@ body {
   .header-pill.llm { display: none; }
   .brand-tag { display: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Self-healing RAG — header pill, live cursor, toggles, trace
+   ═══════════════════════════════════════════════════════════ */
+
+/* "self-healing on" header pill */
+.header-pill.heal {
+  border-color: var(--accent-soft-strong);
+  background: var(--accent-soft);
+}
+.header-pill.heal .lbl { color: var(--accent); }
+.header-pill.heal .num { color: var(--accent); font-weight: 600; }
+
+/* Low-confidence (fallback) tag in the assistant head */
+.assistant-head .fallback-tag {
+  display: inline-flex; align-items: center; gap: 5px; color: #B45309;
+}
+.assistant-head .fallback-tag::before {
+  content: ""; width: 4px; height: 4px; border-radius: 50%; background: #B45309;
+}
+
+/* Blinking cursor while the answer streams in */
+.stream-cursor {
+  display: inline-block;
+  margin-left: 1px;
+  color: var(--accent);
+  font-weight: 400;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Composer toggle row (reranker / hyde / stream) */
+.toggle-row { display: inline-flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; }
+.toggle-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* ── Healing trace timeline ── */
+.ht {
+  margin-top: 12px;
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+.ht-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.ht-live .ht-summary { cursor: default; }
+.ht-summary:hover .ht-summary-label { color: var(--text); }
+.ht-chev { display: inline-flex; transition: transform 0.18s ease; color: var(--text-3); }
+.ht-chev.is-open { transform: rotate(180deg); }
+
+/* Summary badges */
+.ht-badge {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  line-height: 1.5;
+}
+.ht-badge-attempts { background: var(--accent-soft); color: var(--accent); }
+.ht-badge-cache    { background: rgba(143,181,45,0.16); color: #5C7A14; }
+.ht-badge-fallback { background: rgba(180,83,9,0.14); color: #B45309; }
+
+.ht-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0 0 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-left: 1px solid var(--border);
+}
+.ht-step {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-left: 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  animation: fadeUp 0.25s ease-out both;
+}
+.ht-step-dot {
+  position: absolute;
+  left: -3px;
+  top: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+.ht-step-dot[data-healing="true"] { background: var(--accent); }
+.ht-stage {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+  flex-shrink: 0;
+  min-width: 56px;
+}
+.ht-stage.is-healing { color: var(--accent); font-weight: 600; }
+.ht-attempt {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--text-4);
+  flex-shrink: 0;
+}
+.ht-msg { color: var(--text-2); flex: 1; }
+.ht-score {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.ht-rewrite {
+  display: block;
+  flex-basis: 100%;
+  margin: 2px 0 0 64px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-3);
+}
+.ht-rewrite span { color: var(--text-2); }
+
+@media (max-width: 480px) {
+  .ht-stage { min-width: 0; }
+  .ht-rewrite { margin-left: 14px; }
+  .toggle-row { gap: 12px; }
+}

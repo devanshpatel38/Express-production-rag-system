@@ -2,7 +2,8 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Source } from "@/lib/api";
+import type { Source, HealingEvent } from "@/lib/api";
+import { HealingTrace } from "@/components/HealingTrace";
 
 interface Props {
   content: string;
@@ -10,6 +11,12 @@ interface Props {
   latency_ms?: number;
   reranked?: boolean;
   streaming?: boolean;
+  trace?: HealingEvent[];
+  fromCache?: boolean;
+  fallback?: boolean;
+  attempts?: number;
+  // Human-readable label of the pipeline stage currently running (live).
+  liveStage?: string;
   isPanelOpen?: boolean;
   onOpenSources?: () => void;
 }
@@ -28,17 +35,55 @@ export function MessageBubble({
   latency_ms,
   reranked,
   streaming,
+  trace,
+  fromCache,
+  fallback,
+  attempts,
+  liveStage,
   isPanelOpen,
   onOpenSources,
 }: Props) {
-  if (streaming) {
-    return (
-      <div className="msg msg-assistant msg-animate">
-        <div className="assistant-head">
-          <span className="role">retrieving</span>
-          <span>·</span>
-          <span className="latency">querying index…</span>
-        </div>
+  // Pre-first-token phase: no answer text yet, pipeline still working.
+  const thinking = streaming && !content;
+
+  return (
+    <div className="msg msg-assistant msg-animate">
+      <div className="assistant-head">
+        {thinking ? (
+          <>
+            <span className="role">{liveStage ? "healing" : "retrieving"}</span>
+            <span>·</span>
+            <span className="latency">{liveStage ?? "querying index…"}</span>
+          </>
+        ) : (
+          <>
+            <span className="role">assistant</span>
+            {latency_ms !== undefined && (
+              <>
+                <span>·</span>
+                <span className="latency">
+                  <strong>{latency_ms}ms</strong>
+                  {sources && <> · {sources.length} chunks</>}
+                </span>
+              </>
+            )}
+            {reranked && (
+              <>
+                <span>·</span>
+                <span className="reranked">reranked</span>
+              </>
+            )}
+            {fallback && (
+              <>
+                <span>·</span>
+                <span className="fallback-tag">low confidence</span>
+              </>
+            )}
+          </>
+        )}
+      </div>
+
+      {thinking ? (
         <div className="assistant-body">
           <p style={{ color: "var(--text-3)" }}>
             <span className="dots">
@@ -48,34 +93,24 @@ export function MessageBubble({
             </span>
           </p>
         </div>
-      </div>
-    );
-  }
+      ) : (
+        <div className="assistant-body">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          {streaming && <span className="stream-cursor">▍</span>}
+        </div>
+      )}
 
-  return (
-    <div className="msg msg-assistant msg-animate">
-      <div className="assistant-head">
-        <span className="role">assistant</span>
-        <span>·</span>
-        {latency_ms !== undefined && (
-          <span className="latency">
-            <strong>{latency_ms}ms</strong>
-            {sources && <> · {sources.length} chunks</>}
-          </span>
-        )}
-        {reranked && (
-          <>
-            <span>·</span>
-            <span className="reranked">reranked</span>
-          </>
-        )}
-      </div>
+      {trace && trace.length > 0 && (
+        <HealingTrace
+          trace={trace}
+          fromCache={fromCache}
+          fallback={fallback}
+          attempts={attempts}
+          live={streaming}
+        />
+      )}
 
-      <div className="assistant-body">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-      </div>
-
-      {sources && sources.length > 0 && (
+      {!streaming && sources && sources.length > 0 && (
         <button
           className={"sources-trigger" + (isPanelOpen ? " is-active" : "")}
           onClick={onOpenSources}

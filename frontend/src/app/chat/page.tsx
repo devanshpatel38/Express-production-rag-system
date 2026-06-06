@@ -5,9 +5,11 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   chat,
+  chatStream,
   health as fetchHealth,
   type ChatMessage,
   type Source,
+  type HealingEvent,
   type HealthResponse,
 } from "@/lib/api";
 import { MessageBubble } from "@/components/MessageBubble";
@@ -20,6 +22,10 @@ interface Turn {
   sources?: Source[];
   latency_ms?: number;
   reranked?: boolean;
+  trace?: HealingEvent[];
+  fromCache?: boolean;
+  fallback?: boolean;
+  attempts?: number;
 }
 
 const STARTER_QUESTIONS = [
@@ -28,6 +34,23 @@ const STARTER_QUESTIONS = [
   { kind: "Static",    text: "How do I serve static files from a directory?" },
   { kind: "Lifecycle", text: "What's the difference between app.use and app.get?" },
 ];
+
+// Verbose, human-readable label for the stage currently running (shown in the
+// in-flight bubble head). The HealingTrace timeline uses its own terse labels.
+const STAGE_LABEL: Record<string, string> = {
+  routing:      "routing your question",
+  cache_hit:    "cache hit — serving instantly",
+  hyde:         "generating hypothetical passage",
+  retrieval:    "searching documentation",
+  grading:      "grading retrieved chunks",
+  rerank:       "reranking results",
+  rewrite:      "rewriting query for better retrieval",
+  generation:   "generating answer",
+  faithfulness: "verifying answer accuracy",
+  retry:        "retrying with improved query",
+  give_up:      "returning best-effort answer",
+  done:         "finalising",
+};
 
 const GITHUB_URL = "https://github.com/devanshpatel38/Express-production-rag-system";
 
@@ -61,9 +84,12 @@ export default function ChatPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [useReranker, setUseReranker] = useState(true);
+  const [useHyde, setUseHyde] = useState(false);
+  const [streaming, setStreaming] = useState(true);
   const [healthData, setHealthData] = useState<HealthResponse | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTurnId, setPanelTurnId] = useState<number | null>(null);
+  const [inFlightId, setInFlightId] = useState<number | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nextId = useRef(1);
@@ -77,7 +103,7 @@ export default function ChatPage() {
     if (threadRef.current) {
       threadRef.current.scrollTop = threadRef.current.scrollHeight;
     }
-  }, [turns.length, busy]);
+  }, [turns, busy]);
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -107,32 +133,66 @@ export default function ChatPage() {
     setTurns((prev) => [
       ...prev,
       { id: userId, role: "user", content: q },
-      { id: asstId, role: "assistant", content: "" },
+      { id: asstId, role: "assistant", content: "", trace: [] },
     ]);
     setBusy(true);
+    setInFlightId(asstId);
+
+    const patch = (updater: (t: Turn) => Turn) =>
+      setTurns((prev) => prev.map((t) => (t.id === asstId ? updater(t) : t)));
 
     try {
-      const resp = await chat(q, history, { useReranker });
-      setTurns((prev) =>
-        prev.map((t) =>
-          t.id === asstId
-            ? {
-                ...t,
-                content: resp.answer,
-                sources: resp.sources,
-                latency_ms: resp.latency_ms,
-                reranked: useReranker,
-              }
-            : t
-        )
-      );
+      if (streaming) {
+        const live: HealingEvent[] = [];
+        const final = await chatStream(
+          q,
+          history,
+          { useReranker, useHyde },
+          {
+            onEvent: (ev) => {
+              live.push(ev);
+              const snapshot = [...live];
+              patch((t) => ({ ...t, trace: snapshot }));
+            },
+            onToken: (text) => {
+              patch((t) => ({ ...t, content: t.content + text }));
+            },
+            onError: (msg) => setError(msg),
+          }
+        );
+        patch((t) => ({
+          ...t,
+          content: final.answer,
+          sources: final.sources,
+          latency_ms: final.latency_ms,
+          reranked: useReranker,
+          trace: final.trace,
+          fromCache: final.from_cache,
+          fallback: final.fallback,
+          attempts: final.attempts,
+        }));
+      } else {
+        const resp = await chat(q, history, { useReranker, useHyde });
+        patch((t) => ({
+          ...t,
+          content: resp.answer,
+          sources: resp.sources,
+          latency_ms: resp.latency_ms,
+          reranked: useReranker,
+          trace: resp.trace,
+          fromCache: resp.from_cache,
+          fallback: resp.fallback,
+          attempts: resp.attempts,
+        }));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setTurns((prev) => prev.filter((t) => t.id !== asstId && t.id !== userId));
     } finally {
       setBusy(false);
+      setInFlightId(null);
     }
-  }, [busy, turns, useReranker]);
+  }, [busy, turns, useReranker, useHyde, streaming]);
 
   // Auto-submit from ?q= URL param
   useEffect(() => {
@@ -161,6 +221,13 @@ export default function ChatPage() {
     return idx > 0 ? turns[idx - 1].content : "";
   })();
 
+  // Verbose label for the stage currently running on the in-flight turn.
+  const liveStageFor = (t: Turn): string | undefined => {
+    if (t.id !== inFlightId || !t.trace || t.trace.length === 0) return undefined;
+    const last = t.trace[t.trace.length - 1];
+    return STAGE_LABEL[last.stage] ?? last.stage;
+  };
+
   return (
     <div className="app">
       {/* ─── Header ─── */}
@@ -185,6 +252,15 @@ export default function ChatPage() {
                 <span className="lbl">indexed</span>
                 <span className="num">{healthData.indexed_chunks.toLocaleString()}</span>
               </span>
+              {healthData.self_healing_enabled && (
+                <span
+                  className="header-pill heal hide-md"
+                  title="Self-healing RAG: chunk grading, query rewriting, and faithfulness checks are active"
+                >
+                  <span className="lbl">self-healing</span>
+                  <span className="num">on</span>
+                </span>
+              )}
               <span className="header-pill llm hide-md">
                 <span className="lbl">llm</span>
                 <span className="num">{healthData.llm_provider}</span>
@@ -216,8 +292,9 @@ export default function ChatPage() {
                 <div className="hero-eyebrow">Express.js · Official Docs</div>
                 <h1>Ask anything in the Express.js documentation.</h1>
                 <p>
-                  Retrieval-augmented answers grounded in the official expressjs/express docs.
-                  Hybrid search (dense + BM25), cross-encoder reranking, grounded answers with citations.
+                  Self-healing retrieval-augmented answers grounded in the official expressjs/express docs.
+                  Hybrid search (dense + BM25), cross-encoder reranking, LLM chunk grading,
+                  query rewriting, and faithfulness checks — with a transparent healing trace.
                 </p>
                 <div className="chips">
                   {STARTER_QUESTIONS.map((q) => (
@@ -247,7 +324,12 @@ export default function ChatPage() {
                   sources={t.sources}
                   latency_ms={t.latency_ms}
                   reranked={t.reranked}
-                  streaming={busy && !t.content}
+                  trace={t.trace}
+                  fromCache={t.fromCache}
+                  fallback={t.fallback}
+                  attempts={t.attempts}
+                  streaming={busy && t.id === inFlightId}
+                  liveStage={liveStageFor(t)}
                   isPanelOpen={panelOpen && panelTurnId === t.id}
                   onOpenSources={() => openPanel(t.id)}
                 />
@@ -296,8 +378,8 @@ export default function ChatPage() {
               disabled={busy}
             />
             <div className="composer-bar">
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div className="reranker">
+              <div className="toggle-row">
+                <div className="toggle">
                   <button
                     type="button"
                     className={"switch" + (useReranker ? " on" : "")}
@@ -305,16 +387,41 @@ export default function ChatPage() {
                     aria-pressed={useReranker}
                     aria-label="Toggle reranker"
                   />
-                  <label className="reranker-label" onClick={() => setUseReranker((v) => !v)}>
-                    reranker{" "}
-                    <span className="help" title="Re-orders retrieved chunks by relevance before the model writes the answer.">
-                      ?
-                    </span>
+                  <label className="toggle-label" onClick={() => setUseReranker((v) => !v)}>
+                    reranker
                   </label>
-                  <div className="tooltip" role="tooltip">
-                    Re-orders the top retrieved chunks by semantic relevance to the query before the
-                    model writes the answer. Slower (+200ms) but more accurate.
-                  </div>
+                </div>
+                <div className="toggle">
+                  <button
+                    type="button"
+                    className={"switch" + (useHyde ? " on" : "")}
+                    onClick={() => setUseHyde((v) => !v)}
+                    aria-pressed={useHyde}
+                    aria-label="Toggle HyDE"
+                  />
+                  <label
+                    className="toggle-label"
+                    onClick={() => setUseHyde((v) => !v)}
+                    title="Hypothetical Document Embeddings — embeds an imagined answer for better dense retrieval on vague queries."
+                  >
+                    hyde
+                  </label>
+                </div>
+                <div className="toggle">
+                  <button
+                    type="button"
+                    className={"switch" + (streaming ? " on" : "")}
+                    onClick={() => setStreaming((v) => !v)}
+                    aria-pressed={streaming}
+                    aria-label="Toggle streaming"
+                  />
+                  <label
+                    className="toggle-label"
+                    onClick={() => setStreaming((v) => !v)}
+                    title="Stream the healing steps and answer live via Server-Sent Events."
+                  >
+                    stream
+                  </label>
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
