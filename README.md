@@ -2,6 +2,14 @@
 
 **Built by:** [Devansh Patel](https://portfolio-website-umber-ten-90.vercel.app/#)
 
+### ▶ [Try the live demo →](https://frontend-liart-xi-96.vercel.app/)
+
+> The backend sleeps when idle (free-tier hosting, plus the app offloads its models
+> after inactivity to save RAM). **The first question can take 30–60s while it wakes up
+> and reloads the index** — after that it's fast. Ask something like
+> *"how do I handle errors in Express middleware?"* and expand the trace panel to watch
+> the self-healing loop grade, rewrite, and verify its own answer.
+
 A retrieval-augmented chatbot grounded in the official Express.js documentation.
 Built to demonstrate a production-shaped, **self-healing** RAG pipeline end-to-end,
 not a notebook demo — the system inspects its own retrieval and answers, corrects
@@ -115,6 +123,8 @@ python -m eval.run_eval --check-thresholds  # CI mode (non-zero on regression)
 Reports land in `backend/eval/reports/`. See [`docs/EVAL.md`](docs/EVAL.md) for what each metric means and how thresholds are set.
 
 ## Deployment
+
+Live instance: **https://frontend-liart-xi-96.vercel.app/**
 
 - **Backend** → Render (Docker). See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 - **Frontend** → Vercel (Next.js). Set `NEXT_PUBLIC_API_BASE_URL` to the Render URL.
