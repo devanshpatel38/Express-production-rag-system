@@ -1,84 +1,119 @@
 {
-  "dataset_version": "1.0",
-  "description": "Hand-curated eval set for Express.js docs RAG. Each item has a question and a ground-truth answer plus reference source paths. Ground-truth answers are intentionally short - we score on whether the model captures the key fact, not exact wording.",
+  "dataset_version": "2.0",
+  "description": "Hand-curated eval set for the World Bank Global Economic Prospects June 2026 PDF RAG. Ground truths verified against the PDF; reference_pages are 1-based PDF page numbers (printed page = PDF page - 22 in chapters 1-2).",
   "items": [
     {
-      "id": "routing-basic",
-      "question": "How do I define a GET route in Express?",
-      "ground_truth": "Use app.get(path, handler), where path is a string or pattern and handler is a function taking req and res. Example: app.get('/', (req, res) => res.send('hello')).",
-      "reference_sources": ["en/starter/basic-routing.md", "en/guide/routing.md"]
+      "id": "fig-world-2026",
+      "question": "What is the World Bank's June 2026 forecast for global real GDP growth in 2026, and what was the 2025 estimate?",
+      "ground_truth": "Global real GDP growth is forecast at 2.5 percent in 2026, down from an estimated 2.9 percent in 2025 (Table 1.1).",
+      "reference_pages": [
+        26,
+        27
+      ]
     },
     {
-      "id": "middleware-order",
-      "question": "Does the order in which middleware is defined matter?",
-      "ground_truth": "Yes. Middleware functions execute in the order they are defined via app.use or the routing methods. Earlier middleware can short-circuit later ones by not calling next().",
-      "reference_sources": ["en/guide/using-middleware.md", "en/guide/writing-middleware.md"]
+      "id": "fig-india-2026",
+      "question": "What is the projected 2026 real GDP growth for India in Table 1.1?",
+      "ground_truth": "India's real GDP growth is forecast at 6.6 percent in 2026f (7.7 percent in 2025e).",
+      "reference_pages": [
+        26
+      ]
     },
     {
-      "id": "error-middleware-signature",
-      "question": "What is the signature of an Express error-handling middleware?",
-      "ground_truth": "Error-handling middleware takes four arguments: (err, req, res, next). The four-argument signature is what Express uses to identify it as an error handler.",
-      "reference_sources": ["en/guide/error-handling.md"]
+      "id": "fig-us-2027",
+      "question": "What real GDP growth is forecast for the United States in 2027?",
+      "ground_truth": "The United States is forecast to grow 2.1 percent in 2027f (2.2 percent in 2026f).",
+      "reference_pages": [
+        26
+      ]
     },
     {
-      "id": "req-query-vs-params",
-      "question": "What is the difference between req.query and req.params?",
-      "ground_truth": "req.params holds route parameters parsed from the URL path (e.g. /users/:id), while req.query holds the parsed query-string values (e.g. ?sort=asc).",
-      "reference_sources": ["en/4x/api.md", "en/guide/routing.md"]
+      "id": "fig-world-trade-2026",
+      "question": "What is the forecast for world trade volume growth in 2026 and how does it compare with the January 2026 projection?",
+      "ground_truth": "World trade volume growth is forecast at 2.9 percent in 2026f, which is 0.7 percentage point above the January 2026 projection.",
+      "reference_pages": [
+        26
+      ]
     },
     {
-      "id": "static-files",
-      "question": "How do I serve static files from a directory called public?",
-      "ground_truth": "Use the built-in middleware express.static: app.use(express.static('public')). You can also mount it at a virtual path: app.use('/static', express.static('public')).",
-      "reference_sources": ["en/starter/static-files.md"]
+      "id": "fig-ssa-2026",
+      "question": "What is the 2026 forecast for Sub-Saharan Africa regional GDP growth in the forecast summary table, and what is the revision from January 2026?",
+      "ground_truth": "Sub-Saharan Africa GDP growth is forecast at 4.0 percent in 2026f, a downward revision of 0.3 percentage point from the January 2026 projections.",
+      "reference_pages": [
+        101
+      ]
     },
     {
-      "id": "json-body-parser",
-      "question": "How do I parse JSON request bodies in Express 4.16+?",
-      "ground_truth": "Use the built-in express.json() middleware: app.use(express.json()). The old body-parser package is no longer required for JSON.",
-      "reference_sources": ["en/4x/api.md"]
+      "id": "fig-ssa-public-consumption",
+      "question": "What is the 2026 forecast growth of public consumption in Sub-Saharan Africa (Table 2.11) and by how much was it revised from January 2026?",
+      "ground_truth": "Public consumption in Sub-Saharan Africa is forecast to change by -1.0 percent in 2026f, a downward revision of 4.3 percentage points from January 2026.",
+      "reference_pages": [
+        101
+      ]
     },
     {
-      "id": "router-mounting",
-      "question": "How do I create a modular sub-router and mount it under a path prefix?",
-      "ground_truth": "Create a router with express.Router(), attach routes to it, then mount it on the app with app.use('/prefix', router). Each router is a mini application.",
-      "reference_sources": ["en/guide/routing.md", "en/4x/api.md"]
+      "id": "fig-ssa-2028",
+      "question": "What is the 2028 GDP growth forecast for Sub-Saharan Africa in Table 2.11, and for fixed investment?",
+      "ground_truth": "Sub-Saharan Africa GDP growth is forecast at 4.5 percent in 2028f; fixed investment growth is forecast at 6.5 percent in 2028f.",
+      "reference_pages": [
+        101
+      ]
     },
     {
-      "id": "next-error",
-      "question": "How do I pass an error to Express's error handler from a middleware?",
-      "ground_truth": "Call next(err) with any non-null argument. Express skips remaining non-error middleware and invokes the first error-handling middleware in the stack.",
-      "reference_sources": ["en/guide/error-handling.md"]
+      "id": "narr-global-slowdown",
+      "question": "Why is global growth forecast to slow in 2026?",
+      "ground_truth": "Global growth is forecast to slow to 2.5 percent in 2026, the lowest rate since the COVID-19 pandemic, as higher energy prices, rising inflation, tighter monetary conditions and weaker trade weigh on activity, driven by advanced economies, energy-importing EMDEs and sharply weaker exports in conflict-exposed Middle East economies.",
+      "reference_pages": [
+        27
+      ]
     },
     {
-      "id": "production-best-practices",
-      "question": "What are some recommended things to do for an Express app in production?",
-      "ground_truth": "Set NODE_ENV=production, use a process manager (PM2, systemd) or run multiple instances behind a load balancer, gzip responses, don't use synchronous functions, log properly, and handle exceptions.",
-      "reference_sources": ["en/advanced/best-practice-performance.md"]
+      "id": "narr-emde-outlook",
+      "question": "How fast are emerging market and developing economies expected to grow in 2026 and 2027-28?",
+      "ground_truth": "EMDE growth is anticipated to decelerate to 3.6 percent in 2026, 0.4 percentage point below January projections, and then rebound to 4.2 percent over 2027-28.",
+      "reference_pages": [
+        28
+      ]
     },
     {
-      "id": "template-engine",
-      "question": "How do I configure a template engine like Pug in Express?",
-      "ground_truth": "Set the view engine and views directory via app.set('view engine', 'pug') and app.set('views', './views'). Then render templates with res.render('viewName', locals).",
-      "reference_sources": ["en/guide/using-template-engines.md"]
+      "id": "narr-downside-risk",
+      "question": "What could happen to global growth and inflation if energy supply disruptions are more severe and accompanied by financial stress?",
+      "ground_truth": "Global growth could fall to just 1.3 percent in 2026 and inflation would rise to 4.4 percent.",
+      "reference_pages": [
+        29
+      ]
     },
     {
-      "id": "cookie-parsing",
-      "question": "Does Express parse cookies out of the box?",
-      "ground_truth": "No - Express does not include a built-in cookie parser. Use the cookie-parser middleware (or your own) to populate req.cookies.",
-      "reference_sources": ["en/resources/middleware/cookie-parser.md", "en/4x/api.md"]
+      "id": "narr-jobs",
+      "question": "How many young people are expected to reach working age in EMDEs by 2035?",
+      "ground_truth": "1.2 billion young people are expected to reach working age by 2035 in EMDEs.",
+      "reference_pages": [
+        29
+      ]
     },
     {
-      "id": "trust-proxy",
-      "question": "What does setting 'trust proxy' do in Express?",
-      "ground_truth": "It tells Express to honour the X-Forwarded-* headers (For, Proto, Host) set by an upstream reverse proxy, so req.ip and req.protocol reflect the original client rather than the proxy.",
-      "reference_sources": ["en/guide/behind-proxies.md", "en/4x/api.md"]
+      "id": "narr-advanced",
+      "question": "What growth is forecast for advanced economies in 2026 and why is it slowing?",
+      "ground_truth": "Advanced economy growth is forecast to slow to 1.5 percent in 2026 from 1.8 percent in 2025, mainly because of substantially higher energy prices.",
+      "reference_pages": [
+        27
+      ]
     },
     {
-      "id": "off-topic-control",
-      "question": "What is the best Italian restaurant in Ahmedabad?",
-      "ground_truth": "This question is unrelated to Express.js. The assistant should decline or redirect rather than hallucinate an answer.",
-      "reference_sources": []
+      "id": "label-fig11-panelB",
+      "question": "In Figure 1.1, panel B, which commodity prices are shown and what is the index base?",
+      "ground_truth": "Panel B, energy and fertilizer prices, shows Brent, European natural gas, urea and Asian LNG, indexed to 100 on February 27, 2026, the last market day before the onset of the Middle East conflict.",
+      "reference_pages": [
+        27
+      ]
+    },
+    {
+      "id": "label-fig12-panelA",
+      "question": "What does panel A of Figure 1.2 show?",
+      "ground_truth": "Panel A shows the level of per capita GDP of country groups as a share of advanced economies', indexed to 2019 = 100; EMDEs excluding China and India face almost a full decade of lost convergence with advanced economy income levels.",
+      "reference_pages": [
+        28
+      ]
     }
   ]
 }

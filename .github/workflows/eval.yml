@@ -32,22 +32,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # The Express docs repo is small (~7MB) so we clone it fresh per run.
-      # This keeps the eval against current docs and avoids committing them.
-      - name: Clone Express docs
-        run: |
-          if [ -d "external/expressjs.com/en" ]; then
-            echo "Express docs already present in repo — skipping clone."
-          else
-            echo "Cloning fresh..."
-            git clone --depth 1 https://github.com/expressjs/expressjs.com.git external/expressjs.com
-          fi
+      # The GEP PDF is not committed to the repo; the job fails fast if it is absent.
+      - name: Check GEP PDF present
+        run: test -f GEP-Jun-2026.pdf || (echo "GEP-Jun-2026.pdf missing from repo root" && exit 1)
 
       - name: Build index
         working-directory: backend
         env:
           EMBEDDING_BACKEND: local
-        run: python -m scripts.ingest --source ../external/expressjs.com/en
+        run: python -m scripts.ingest --source ../GEP-Jun-2026.pdf --no-vision
 
       - name: Run eval
         working-directory: backend

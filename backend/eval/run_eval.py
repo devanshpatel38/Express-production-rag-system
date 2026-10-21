@@ -53,8 +53,8 @@ def _run_pipeline_collect(items: list[dict]) -> list[dict]:
                 "ground_truth": it["ground_truth"],
                 "_id": it["id"],
                 "_latency_ms": result.latency_ms,
-                "_retrieved_paths": [c.source_path for c in result.post_rerank],
-                "_reference_sources": it.get("reference_sources", []),
+                "_retrieved_pages": [c.page for c in result.post_rerank if c.page is not None],
+                "_reference_pages": it.get("reference_pages", []),
             }
         )
         time.sleep(20)
@@ -114,16 +114,11 @@ def _score_with_ragas(rows: list[dict]) -> dict:
 
 
 def _retrieval_hit_rate(rows: list[dict]) -> float:
-    """A simple sanity metric: does the retrieved set intersect any reference source?"""
-    relevant = [r for r in rows if r["_reference_sources"]]
+    """Sanity metric: does the retrieved set include any reference page (1-based)?"""
+    relevant = [r for r in rows if r["_reference_pages"]]
     if not relevant:
         return 1.0
-    hits = 0
-    for r in relevant:
-        refs = set(r["_reference_sources"])
-        got = set(r["_retrieved_paths"])
-        if refs & got:
-            hits += 1
+    hits = sum(1 for r in relevant if set(r["_reference_pages"]) & set(r["_retrieved_pages"]))
     return hits / len(relevant)
 
 
