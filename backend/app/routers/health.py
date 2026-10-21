@@ -34,5 +34,4 @@ def health() -> HealthResponse:
         indexed_chunks=indexed,
         llm_provider=s.llm_provider,
         reranker_enabled=s.reranker_enabled,
-        self_healing_enabled=s.self_healing_enabled,
     )
