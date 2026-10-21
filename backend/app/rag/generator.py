@@ -21,20 +21,28 @@ from app.models.schemas import ChatMessage
 from app.rag.retriever import Candidate
 
 
-SYSTEM_PROMPT = """You are an assistant that answers questions about the Express.js web framework using the provided documentation excerpts.
+SYSTEM_PROMPT = """You are an assistant that answers questions about the World Bank "Global Economic Prospects" (GEP) report using the provided excerpts from that report.
 
 Rules:
-- Answer ONLY from the provided context. If the context does not contain the answer, say so plainly.
-- Be concise. Show short code examples when they appear in the context.
-- Cite sources inline using the format [#1], [#2] matching the numbered context blocks.
-- If the user asks something off-topic (not about Express.js), redirect them politely.
+- Answer ONLY from the provided context. If the context does not contain the answer, say so plainly. Never use outside knowledge.
+- Never guess or infer a number. Use a figure only when the context states it explicitly in text or in a table row. Values that appear only in charts or figure descriptions must not be read off or estimated; say the context does not give the exact value.
+- For every figure you state, give its units (for example percent, US dollars, billions of US dollars, percentage points) and its reference period (for example calendar year 2026, fiscal year, or quarter). If the context does not give the units or period, say so rather than assuming them.
+- Cite sources inline using the format [#1], [#2] matching the numbered context blocks. Cite the block that supports each claim.
+- Be concise. Do not add commentary beyond what the context supports.
+- If the user asks something outside the GEP report, redirect them politely.
 """
 
 
 def _format_context(candidates: list[Candidate]) -> str:
     blocks = []
     for i, c in enumerate(candidates, start=1):
-        header = f"[#{i}] {c.section} ({c.source_path})"
+        meta = []
+        if c.page is not None:
+            meta.append(f"p{c.page}")
+        if c.units:
+            meta.append(c.units)
+        suffix = f" ({', '.join(meta)})" if meta else ""
+        header = f"[#{i}] {c.section}{suffix}"
         blocks.append(f"{header}\n{c.text}")
     return "\n\n---\n\n".join(blocks)
 
