@@ -85,15 +85,20 @@ def strip_repeating(text: str, repeating: set[str]) -> str:
     A template spanning several lines is matched against the same number of
     consecutive lines; longer templates are tried first. Other lines are kept.
     """
-    if not repeating:
+    # Numeric-only templates (e.g. "##" from a bare page number) are never
+    # stripped: they would also delete real numeric body lines such as table
+    # cells, footnote markers or years. A letter-bearing template that carries a
+    # page-number line (the full running header) is still removed in one piece.
+    strippable = {t for t in repeating if any(c.isalpha() for c in t)}
+    if not strippable:
         return text
-    widths = sorted({t.count("\n") + 1 for t in repeating}, reverse=True)
+    widths = sorted({t.count("\n") + 1 for t in strippable}, reverse=True)
     lines = text.split("\n")
     out: list[str] = []
     i = 0
     while i < len(lines):
         for n in widths:
-            if i + n <= len(lines) and _mask_digits("\n".join(lines[i : i + n])) in repeating:
+            if i + n <= len(lines) and _mask_digits("\n".join(lines[i : i + n])) in strippable:
                 i += n
                 break
         else:
