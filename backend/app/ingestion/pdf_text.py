@@ -13,6 +13,7 @@ Pure function, no I/O. Handles three artifacts seen in the extracted text:
 """
 
 import re
+from collections import Counter
 
 # Known mojibake (UTF-8 bytes decoded as cp1252) -> intended punctuation.
 _MOJIBAKE = {
@@ -51,3 +52,51 @@ def normalize_text(s: str) -> str:
     paragraphs = _PARAGRAPH_BREAK.split(s)
     cleaned = (_INLINE_SPACE.sub(" ", p).strip() for p in paragraphs)
     return "\n\n".join(p for p in cleaned if p)
+
+
+_DIGIT = re.compile(r"[0-9]")
+
+
+def _mask_digits(s: str) -> str:
+    """Digit-masked template: every digit character becomes '#'."""
+    return _DIGIT.sub("#", s)
+
+
+def collect_repeating_lines(
+    pages_top_bottom: list[tuple[str, str]], min_recurrence: int
+) -> set[str]:
+    """Return digit-masked templates of top/bottom lines seen at least min_recurrence times.
+
+    Each page contributes its top and bottom line. Blank lines are ignored.
+    A running header such as "CHAPTER 1 \\nGLOBAL ... \\n45" yields the template
+    "CHAPTER # \\nGLOBAL ... \\n##", which recurs on every page.
+    """
+    counts: Counter[str] = Counter()
+    for top, bottom in pages_top_bottom:
+        for line in (top, bottom):
+            if line.strip():
+                counts[_mask_digits(line)] += 1
+    return {template for template, n in counts.items() if n >= min_recurrence}
+
+
+def strip_repeating(text: str, repeating: set[str]) -> str:
+    """Remove lines (or multi-line blocks) whose digit-masked form is in repeating.
+
+    A template spanning several lines is matched against the same number of
+    consecutive lines; longer templates are tried first. Other lines are kept.
+    """
+    if not repeating:
+        return text
+    widths = sorted({t.count("\n") + 1 for t in repeating}, reverse=True)
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        for n in widths:
+            if i + n <= len(lines) and _mask_digits("\n".join(lines[i : i + n])) in repeating:
+                i += n
+                break
+        else:
+            out.append(lines[i])
+            i += 1
+    return "\n".join(out)
