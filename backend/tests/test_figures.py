@@ -1,3 +1,4 @@
+import os
 import re
 
 import pymupdf
@@ -6,6 +7,8 @@ import pytest
 from app.ingestion.pdf_figures import FigureContent, describe_figures, detect_figure_regions
 
 PDF = "../GEP-Jun-2026.pdf"
+
+pytestmark = pytest.mark.skipif(not os.path.exists(PDF), reason="GEP PDF not present")
 CAPTION_REGEX = r"(?im)^\s*figure\s+\d+\.\d+"
 
 

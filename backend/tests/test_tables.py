@@ -1,3 +1,4 @@
+import os
 import pymupdf
 import pytest
 
@@ -5,6 +6,8 @@ from app.ingestion.pdf_layout import Block
 from app.ingestion.pdf_tables import extract_tables, is_valid_table
 
 PDF = "../GEP-Jun-2026.pdf"
+
+pytestmark = pytest.mark.skipif(not os.path.exists(PDF), reason="GEP PDF not present")
 
 
 @pytest.fixture(scope="module")

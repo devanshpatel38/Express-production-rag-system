@@ -1,8 +1,11 @@
+import os
 import pytest
 
 from app.ingestion.pdf_loader import PageContent, load_pdf
 
 PDF = "../GEP-Jun-2026.pdf"
+
+pytestmark = pytest.mark.skipif(not os.path.exists(PDF), reason="GEP PDF not present")
 
 
 class _Noop:

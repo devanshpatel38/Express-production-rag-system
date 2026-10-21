@@ -101,6 +101,7 @@
     },
     {
       "id": "label-fig11-panelB",
+      "requires_vision": true,
       "question": "In Figure 1.1, panel B, which commodity prices are shown and what is the index base?",
       "ground_truth": "Panel B, energy and fertilizer prices, shows Brent, European natural gas, urea and Asian LNG, indexed to 100 on February 27, 2026, the last market day before the onset of the Middle East conflict.",
       "reference_pages": [
@@ -109,6 +110,7 @@
     },
     {
       "id": "label-fig12-panelA",
+      "requires_vision": true,
       "question": "What does panel A of Figure 1.2 show?",
       "ground_truth": "Panel A shows the level of per capita GDP of country groups as a share of advanced economies', indexed to 2019 = 100; EMDEs excluding China and India face almost a full decade of lost convergence with advanced economy income levels.",
       "reference_pages": [

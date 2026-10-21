@@ -39,6 +39,13 @@ def _load_dataset() -> list[dict]:
         return json.load(f)["items"]
 
 
+def _filter_items(items: list[dict], skip_vision_items: bool) -> list[dict]:
+    """Drop items that need figure (vision) chunks when the index was built --no-vision."""
+    if not skip_vision_items:
+        return items
+    return [it for it in items if not it.get("requires_vision")]
+
+
 def _run_pipeline_collect(items: list[dict]) -> list[dict]:
     """Run the live pipeline against each item and capture rows in Ragas's expected shape."""
     rows: list[dict] = []
@@ -145,9 +152,14 @@ def main() -> int:
         default=None,
         help="Where to write the JSON report. Defaults to eval/reports/<timestamp>.json.",
     )
+    parser.add_argument(
+        "--skip-vision-items",
+        action="store_true",
+        help="Exclude items marked requires_vision (use when the index was built --no-vision).",
+    )
     args = parser.parse_args()
 
-    items = _load_dataset()
+    items = _filter_items(_load_dataset(), args.skip_vision_items)
     rows = _run_pipeline_collect(items)
 
     hit_rate = _retrieval_hit_rate(rows)

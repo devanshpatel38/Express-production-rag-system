@@ -54,7 +54,7 @@ jobs:
           EMBEDDING_BACKEND: local
           ANONYMIZED_TELEMETRY: "False"
           CHROMA_TELEMETRY: "false"
-        run: python -m eval.run_eval --check-thresholds --output eval/reports/ci.json
+        run: python -m eval.run_eval --check-thresholds --skip-vision-items --output eval/reports/ci.json
 
       - name: Upload report
         if: always()

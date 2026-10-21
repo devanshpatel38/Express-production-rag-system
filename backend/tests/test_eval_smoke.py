@@ -16,3 +16,11 @@ def test_dataset_and_hitrate_shape():
     assert _retrieval_hit_rate([hit]) == 1.0
     assert _retrieval_hit_rate([miss]) == 0.0
     assert _retrieval_hit_rate([hit, miss]) == 0.5
+
+
+def test_skip_vision_items_filter():
+    from eval.run_eval import _filter_items
+
+    items = [{"id": "a"}, {"id": "b", "requires_vision": True}, {"id": "c", "requires_vision": False}]
+    assert [i["id"] for i in _filter_items(items, True)] == ["a", "c"]
+    assert [i["id"] for i in _filter_items(items, False)] == ["a", "b", "c"]
