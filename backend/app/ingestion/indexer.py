@@ -28,6 +28,11 @@ def tokenize(text: str) -> list[str]:
     return [t.lower() for t in _TOKEN_RE.findall(text)]
 
 
+def _s(v) -> str:
+    # Chroma rejects None metadata values; coerce to empty string.
+    return "" if v is None else str(v)
+
+
 def _chroma_client(path: str) -> chromadb.PersistentClient:
     os.makedirs(path, exist_ok=True)
     return chromadb.PersistentClient(path=path)
@@ -58,6 +63,10 @@ def build_indices(chunks: list[Chunk]) -> dict:
             "section": c.section,
             "char_start": c.char_start,
             "char_end": c.char_end,
+            "page": int(c.page) if c.page is not None else 0,
+            "chunk_type": _s(c.chunk_type) or "prose",
+            "table_title": _s(c.table_title),
+            "units": _s(c.units),
         }
         for c in chunks
     ]

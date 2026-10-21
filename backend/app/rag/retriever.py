@@ -35,6 +35,9 @@ class Candidate:
     title: str
     section: str
     score: float  # fused score after normalization
+    page: int | None = None
+    units: str = ""
+    chunk_type: str = "prose"
 
     def to_dict(self) -> dict:
         return {
@@ -44,6 +47,9 @@ class Candidate:
             "title": self.title,
             "section": self.section,
             "score": self.score,
+            "page": self.page,
+            "units": self.units,
+            "chunk_type": self.chunk_type,
         }
 
 
@@ -138,6 +144,9 @@ class HybridRetriever:
                     title=m["title"],
                     section=m["section"],
                     score=fused[cid],
+                    page=m.get("page"),
+                    units=m.get("units") or "",
+                    chunk_type=m.get("chunk_type") or "prose",
                 )
             )
         return out
