@@ -135,8 +135,92 @@ def _caption_above(blocks: list[Block], xa: float, xb: float, header_y: float) -
     return _clean(" ".join(b.text for b in near))
 
 
+def _find_header(rows: list[list[tuple]]):
+    """Index and year-words of the first row holding >=2 year tokens."""
+    for i, r in enumerate(rows):
+        hw = [w for w in r if YEAR_RE.match(w[4])]
+        if len(hw) >= 2:
+            return i, hw
+    return None, []
+
+
+def _name_columns(hw: list[tuple], blocks: list[Block], header_y: float) -> list[str]:
+    """Header names; a repeated year starts a second group, suffixed by its caption."""
+    names = [w[4] for w in hw]
+    seen: set[str] = set()
+    dup_idx = []
+    for i, n in enumerate(names):
+        if n in seen:
+            dup_idx.append(i)
+        seen.add(n)
+    if dup_idx:
+        cap = _caption_above(blocks, hw[dup_idx[0]][0] - 5, hw[dup_idx[-1]][2] + 5, header_y)
+        for i in range(dup_idx[0], len(names)):
+            names[i] = f"{names[i]} ({cap})" if cap else f"{names[i]} (2)"
+    return names
+
+
+def _assign_row(r: list[tuple], centers, names, tol, first_left):
+    """Split one visual row into (label_text, cells, collision).
+
+    Non-numeric tokens in the value area are ignored (stray markers); the
+    caller decides what a row with no numeric cells means.
+    """
+    label_ws, cells, collision, nstray = [], {}, False, 0
+    for w in r:
+        xc = (w[0] + w[2]) / 2
+        tok = w[4].strip()
+        if xc < first_left:
+            label_ws.append(w)
+        elif _is_value(tok):
+            k = min(range(len(centers)), key=lambda i: abs(centers[i] - xc))
+            if abs(centers[k] - xc) <= tol:
+                if names[k] in cells and cells[names[k]] != tok:
+                    collision = True
+                cells[names[k]] = tok
+        else:
+            nstray += 1
+    # prose-dominated row (caption with a footnote digit): its few 'values' are not data
+    stray = nstray > len(cells)
+    if stray:
+        cells = {}
+    return _clean(" ".join(w[4] for w in label_ws)), cells, collision, stray
+
+
+def _assign_rows(rows, centers, names, tol, first_left):
+    """Turn visual rows into (label, cells) with label carry-forward.
+
+    Returns (out, dropped). A row is dropped (never given an invented label)
+    when it has values but no resolvable label, or when two different values
+    land in one column.
+    """
+    out: list[tuple[str, dict[str, str]]] = []
+    dropped = 0
+    carry = ""  # nearest preceding value-less left-text line
+    for r in rows:
+        label, cells, collision, stray = _assign_row(r, centers, names, tol, first_left)
+        if not cells:
+            # heading / wrapped-label first line; prose captions (stray) never carry
+            carry = label if (label and not stray) else ("" if stray else carry)
+            continue
+        if collision:
+            dropped += 1
+            continue
+        if not label:
+            label = carry
+        elif carry and label[:1].islower():
+            label = f"{carry} {label}"  # wrapped label: continuation line
+        if not label:
+            dropped += 1
+            continue
+        if _clean(" ".join(w[4] for w in r if (w[0] + w[2]) / 2 < first_left)):
+            carry = ""  # a labelled value row ends any pending heading
+        out.append((label, cells))
+    return out, dropped
+
+
 def _rows_from_words(page, region, blocks, title, units):
-    """Header-driven row rebuild. Returns TableData-ish tuple or None."""
+    """Header-driven row rebuild. Returns (names, rows) or None."""
     x0, y0, x1, y1 = region
     words = [
         w for w in page.get_text("words")
@@ -144,54 +228,14 @@ def _rows_from_words(page, region, blocks, title, units):
         and w[4].strip()
     ]
     rows = _y_rows(words)
-    header = None
-    for i, r in enumerate(rows):
-        if sum(1 for w in r if YEAR_RE.match(w[4])) >= 2:
-            header = i
-            break
+    header, hw = _find_header(rows)
     if header is None:
         return None
-    hw = [w for w in rows[header] if YEAR_RE.match(w[4])]
     centers = [(w[0] + w[2]) / 2 for w in hw]
-    names = [w[4] for w in hw]
-    header_y = rows[header][0][1]
-    # disambiguate repeated header names (e.g. a second 2026f/2027f block of revisions)
-    seen: dict[str, int] = {}
-    dup_idx = []
-    for i, n in enumerate(names):
-        if n in seen:
-            dup_idx.append(i)
-        else:
-            seen[n] = i
-    if dup_idx:
-        cap = _caption_above(blocks, hw[dup_idx[0]][0] - 5, hw[dup_idx[-1]][2] + 5, header_y)
-        # every column from the first duplicate onward belongs to the second group
-        for i in range(dup_idx[0], len(names)):
-            names[i] = f"{names[i]} ({cap})" if cap else f"{names[i]} (2)"
+    names = _name_columns(hw, blocks, rows[header][0][1])
     spacing = min((b - a for a, b in zip(centers, centers[1:])), default=40.0)
     tol = max(spacing * 0.5, 10.0)
-    first_left = centers[0] - tol
-
-    out: list[tuple[str, dict[str, str]]] = []
-    for ri, r in enumerate(rows[header + 1:], start=1):
-        label_ws, cells, spanning = [], {}, False
-        for w in r:
-            xc = (w[0] + w[2]) / 2
-            tok = w[4].strip()
-            if xc < first_left:
-                label_ws.append(w)
-            elif _is_value(tok):
-                k = min(range(len(centers)), key=lambda i: abs(centers[i] - xc))
-                if abs(centers[k] - xc) <= tol:
-                    cells[names[k]] = tok
-            else:
-                spanning = True  # prose inside the value area: a caption/sub-heading line
-        if not cells or spanning:
-            continue
-        label = _clean(" ".join(w[4] for w in label_ws))
-        if not label:
-            label = f"{title} row {ri}"
-        out.append((label, cells))
+    out, _dropped = _assign_rows(rows[header + 1:], centers, names, tol, centers[0] - tol)
     if len(out) < 2:
         return None
     return names, out
@@ -207,6 +251,7 @@ def _rows_from_grid(page, table, blocks, title):
     bx0 = table.bbox[0]
     row_boxes = [getattr(r, "bbox", None) for r in table.rows]
     out = []
+    carry = ""
     n = len(raw)
     for i, row in enumerate(raw[1:], start=1):
         if i < len(row_boxes) and row_boxes[i]:
@@ -221,8 +266,12 @@ def _rows_from_grid(page, table, blocks, title):
         label = _clean(" ".join(w[4] for w in sorted(lab, key=lambda w: w[0])))
         cells = {header[c]: str(v).strip() for c, v in enumerate(row) if not _blank(v)}
         if not cells:
+            carry = label or carry
             continue
-        out.append((label or f"{title} row {i}", cells))
+        label = label or carry
+        if not label:
+            continue  # never fabricate a label
+        out.append((label, cells))
     return (header, out) if len(out) >= 2 else None
 
 
