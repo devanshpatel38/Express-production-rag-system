@@ -18,3 +18,23 @@ def test_repair_replacement_char():
 
 def test_repair_mojibake_quotes():
     assert normalize_text("the Fedâ\u0080\u0099s view") == "the Fed's view"
+
+
+def test_mojibake_dash_at_line_end_does_not_fuse():
+    # em dash (UTF-8 bytes decoded as cp1252) at a line end must not join the words
+    result = normalize_text("word\u00e2\u0080\u0094\nword")
+    assert "wordword" not in result
+    assert "\n" not in result
+
+
+def test_fffd_between_letters_is_apostrophe():
+    assert normalize_text("Fed\ufffds") == "Fed's"
+
+
+def test_digit_guard_keeps_numeric_range():
+    # hyphen kept, no join; the line break collapses to a space
+    assert normalize_text("2019-\n2020") == "2019- 2020"
+
+
+def test_dehyphenate_tolerates_indented_continuation():
+    assert normalize_text("inter-\n   vention") == "intervention"
