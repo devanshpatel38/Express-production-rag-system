@@ -1272,3 +1272,22 @@ body {
   .ht-rewrite { margin-left: 14px; }
   .toggle-row { gap: 12px; }
 }
+/* --- PDF source metadata (GEP pipeline) --- */
+.source-type {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--accent-soft, rgba(99, 102, 241, 0.12));
+  color: var(--accent, #6366f1);
+  vertical-align: middle;
+}
+.source-units {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-3, #94a3b8);
+  font-style: italic;
+}
