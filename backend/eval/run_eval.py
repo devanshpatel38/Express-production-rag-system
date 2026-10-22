@@ -135,7 +135,7 @@ def _print_report(aggregate: dict, hit_rate: float, latency_p50: int) -> None:
     print(f"Latency p50: {latency_p50} ms")
     for k, v in aggregate.items():
         floor = THRESHOLDS.get(k)
-        flag = "" if floor is None or v >= floor else "  ⚠ BELOW THRESHOLD"
+        flag = "" if floor is None or v >= floor else "  !! BELOW THRESHOLD"
         print(f"  {k:20s} {v:.3f}{flag}")
 
 
@@ -184,7 +184,7 @@ def main() -> int:
             indent=2,
         )
     )
-    print(f"\nReport saved → {out_path}")
+    print(f"\nReport saved -> {out_path}")
 
     if args.check_thresholds:
         failures = [k for k, v in aggregate.items() if v < THRESHOLDS[k]]
