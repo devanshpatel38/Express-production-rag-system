@@ -11,6 +11,7 @@ easy to clone-and-run.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from functools import lru_cache
 
 from app.config import get_settings
@@ -42,17 +43,10 @@ class _CohereReranker:
         for r in resp.results:
             c = candidates[r.index]
             # Overwrite score with the rerank relevance - it's a much better signal
-            # than the hybrid score for the final ordering.
-            out.append(
-                Candidate(
-                    chunk_id=c.chunk_id,
-                    text=c.text,
-                    source_path=c.source_path,
-                    title=c.title,
-                    section=c.section,
-                    score=float(r.relevance_score),
-                )
-            )
+            # than the hybrid score for the final ordering. Use dataclasses.replace
+            # so every other Candidate field (page, units, chunk_type, ...) is
+            # preserved - rebuilding the dataclass by hand silently dropped them.
+            out.append(replace(c, score=float(r.relevance_score)))
         return out
 
 
