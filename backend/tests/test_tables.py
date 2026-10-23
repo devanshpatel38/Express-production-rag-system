@@ -104,3 +104,13 @@ def test_validator_rejects_non_numeric():
 
 def test_validator_rejects_numeric_noise():
     assert not is_valid_table([["a", "b"], ["c", "2018"], ["e", "f"]])
+
+
+def test_interior_gap_value_kept_trailing_dropped():
+    raw = [
+        ["", "2018", "", "2016", ""],
+        ["A", "1", "2", "3", "99"],
+    ]
+    td = _table_rows(raw, 1, "", (0, 0, 1, 1))
+    assert td.rows == [("A", {"2018": "1", "col2": "2", "2016": "3"})]
+    assert set(td.rows[0][1]) == set(td.columns)

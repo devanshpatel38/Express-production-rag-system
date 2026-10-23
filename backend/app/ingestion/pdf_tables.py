@@ -131,10 +131,12 @@ def _table_rows(raw: list[list], page_no: int, title: str, bbox) -> TableData | 
             pending_labels = ""
         elif row_label:
             pending_labels = ""
-        if columns:  # never place a value under a column that has no header
-            named = {columns[i]: v for i, v in non_empty if i in columns}
-        else:
-            named = {f"col{i}": v for i, v in non_empty}
+        last = max(columns) if columns else None
+        named = {
+            columns.get(i, f"col{i}"): v
+            for i, v in non_empty
+            if last is None or i <= last  # drop only cells trailing past the header
+        }
         out.extend(split_packed_row(row_label, named))
     out = [(lb, v) for lb, v in out if lb.strip() and any(x.strip() for x in v.values())]
     if not out:
