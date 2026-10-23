@@ -64,3 +64,43 @@ def test_matched_counts_zip():
 
 def test_is_valid_table_rejects_inconsistent():
     assert is_valid_table([["a", "b"], ["c"]]) is False
+
+
+from app.ingestion.pdf_tables import _table_rows
+
+
+def test_duplicate_headers_keep_both_values():
+    raw = [
+        ["", "2018", "2018"],
+        ["Rev\nCost", "1,000", "2,000"],
+        ["", "", ""],
+    ]
+    raw[1] = ["Rev", "1,000", "2,000"]
+    td = _table_rows(raw, 1, "", (0, 0, 1, 1))
+    assert td.rows == [("Rev", {"2018": "1,000", "2018#2": "2,000"})]
+    assert td.columns == ["2018", "2018#2"]
+
+
+def test_columns_match_row_keys():
+    raw = [["", "2018", "2017"], ["A", "1", "2"]]
+    td = _table_rows(raw, 1, "", (0, 0, 1, 1))
+    assert td.columns == ["2018", "2017"]
+    assert set(td.rows[0][1]) == set(td.columns)
+
+
+def test_out_of_range_value_cells_skipped():
+    raw = [["", "2018", ""], ["A", "1", "99"]]
+    td = _table_rows(raw, 1, "", (0, 0, 1, 1))
+    assert td.rows == [("A", {"2018": "1"})]
+
+
+def test_validator_rejects_sparse():
+    assert not is_valid_table([["a", None, None], [None, "1", None], [None, None, "2"]])
+
+
+def test_validator_rejects_non_numeric():
+    assert not is_valid_table([["a", "b"], ["c", "d"], ["e", "f"]])
+
+
+def test_validator_rejects_numeric_noise():
+    assert not is_valid_table([["a", "b"], ["c", "2018"], ["e", "f"]])

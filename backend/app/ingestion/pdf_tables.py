@@ -89,6 +89,16 @@ def _title_above(bbox, blocks: list[Block]) -> str:
     return " ".join(best.text.split()) if best else ""
 
 
+def _dedupe_columns(items: list[tuple[int, str]]) -> dict[int, str]:
+    """Map column index -> unique name (later duplicates get '#2', '#3' ...)."""
+    counts: dict[str, int] = {}
+    out: dict[int, str] = {}
+    for i, v in items:
+        counts[v] = counts.get(v, 0) + 1
+        out[i] = v if counts[v] == 1 else f"{v}#{counts[v]}"
+    return out
+
+
 def _table_rows(raw: list[list], page_no: int, title: str, bbox) -> TableData | None:
     units = ""
     columns: dict[int, str] = {}
@@ -106,7 +116,7 @@ def _table_rows(raw: list[list], page_no: int, title: str, bbox) -> TableData | 
             continue
         non_empty = [(i, v) for i, v in enumerate(vals, 1) if v]
         if non_empty and all(_YEAR.match(v) for _, v in non_empty):
-            columns = {i: v for i, v in non_empty}
+            columns = _dedupe_columns(non_empty)
             if label:
                 pending_labels = label  # labels share the header row (packed stack)
             continue
@@ -121,16 +131,22 @@ def _table_rows(raw: list[list], page_no: int, title: str, bbox) -> TableData | 
             pending_labels = ""
         elif row_label:
             pending_labels = ""
-        named = {columns.get(i, f"col{i}"): v for i, v in non_empty}
+        if columns:  # never place a value under a column that has no header
+            named = {columns[i]: v for i, v in non_empty if i in columns}
+        else:
+            named = {f"col{i}": v for i, v in non_empty}
         out.extend(split_packed_row(row_label, named))
     out = [(lb, v) for lb, v in out if lb.strip() and any(x.strip() for x in v.values())]
     if not out:
         return None
+    ordered = [columns[i] for i in sorted(columns)] if columns else []
+    seen = {k for _, v in out for k in v}
+    used_columns = [c for c in ordered if c in seen] + sorted(seen - set(ordered))
     return TableData(
         page=page_no,
         title=title,
         units=units,
-        columns=[columns[i] for i in sorted(columns)],
+        columns=used_columns,
         rows=out,
         bbox=tuple(bbox),
     )
