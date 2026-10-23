@@ -43,3 +43,9 @@ Thumbs.db
 
 # Design source (local only)
 express-production-rag/
+
+# Superpowers SDD scratch workspace (local only)
+.superpowers/
+
+# Source PDFs (ingested locally; not committed)
+*.pdf
