@@ -1,28 +1,22 @@
-"""Markdown-aware chunker.
-
-We chunk by character window with overlap, but also carry the nearest H1/H2
-into each chunk's metadata so the prompt can show "in section: Routing" etc.
-A header-aware chunker beats blind splitting by a wide margin on docs.
-"""
+"""Chunk model and sliding-window text splitter shared by the ingestion pipeline."""
 from __future__ import annotations
 
-import re
-import uuid
-from dataclasses import dataclass, field
-
-
-HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
+from dataclasses import dataclass
 
 
 @dataclass
 class Chunk:
     chunk_id: str
     source_path: str
-    title: str        # nearest heading
-    section: str      # full breadcrumb e.g. "Guide > Routing > Route paths"
+    title: str        # nearest heading / section title
+    section: str      # section breadcrumb
     text: str
     char_start: int
     char_end: int
+    page: int = 0                 # 1-based PDF page (0 = unknown)
+    chunk_type: str = "prose"     # "prose" | "table_row"
+    table_title: str = ""
+    units: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -33,57 +27,21 @@ class Chunk:
             "text": self.text,
             "char_start": self.char_start,
             "char_end": self.char_end,
+            "page": self.page,
+            "chunk_type": self.chunk_type,
+            "table_title": self.table_title,
+            "units": self.units,
         }
 
 
-@dataclass
-class _HeadingSpan:
-    level: int
-    title: str
-    start: int  # char offset where heading line begins
+def window_text(
+    text: str, chunk_size: int, chunk_overlap: int
+) -> list[tuple[int, int, str]]:
+    """Slide a window over text, snapping breaks to paragraph boundaries when possible.
 
-
-def _build_breadcrumb(headings: list[_HeadingSpan], pos: int) -> tuple[str, str]:
-    """Return (nearest_title, breadcrumb) for a given character position."""
-    active: list[_HeadingSpan] = []
-    for h in headings:
-        if h.start > pos:
-            break
-        # Pop deeper-or-equal levels - that's how heading nesting actually works.
-        while active and active[-1].level >= h.level:
-            active.pop()
-        active.append(h)
-    if not active:
-        return ("(untitled)", "(untitled)")
-    return (active[-1].title, " > ".join(h.title for h in active))
-
-
-def _strip_frontmatter(md: str) -> str:
-    # Express docs use Jekyll-style YAML frontmatter. We drop it.
-    if md.startswith("---"):
-        end = md.find("\n---", 3)
-        if end != -1:
-            return md[end + 4 :].lstrip("\n")
-    return md
-
-
-def chunk_markdown(
-    text: str,
-    source_path: str,
-    chunk_size: int = 700,
-    chunk_overlap: int = 120,
-) -> list[Chunk]:
-    """Slide a window over the markdown, snapping breaks to paragraph boundaries when possible."""
-    text = _strip_frontmatter(text)
-    if not text.strip():
-        return []
-
-    headings = [
-        _HeadingSpan(level=len(m.group(1)), title=m.group(2).strip(), start=m.start())
-        for m in HEADING_RE.finditer(text)
-    ]
-
-    chunks: list[Chunk] = []
+    Returns (char_start, char_end, stripped_snippet) tuples; empty snippets are skipped.
+    """
+    out: list[tuple[int, int, str]] = []
     i = 0
     n = len(text)
     while i < n:
@@ -97,20 +55,8 @@ def chunk_markdown(
 
         snippet = text[i:end].strip()
         if snippet:
-            title, breadcrumb = _build_breadcrumb(headings, i)
-            chunks.append(
-                Chunk(
-                    chunk_id=str(uuid.uuid4()),
-                    source_path=source_path,
-                    title=title,
-                    section=breadcrumb,
-                    text=snippet,
-                    char_start=i,
-                    char_end=end,
-                )
-            )
+            out.append((i, end, snippet))
         if end >= n:
             break
         i = max(end - chunk_overlap, i + 1)
-
-    return chunks
+    return out
