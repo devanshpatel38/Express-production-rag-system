@@ -16,10 +16,10 @@ async function getHealth() {
 const PORTFOLIO_URL = "https://portfolio-website-umber-ten-90.vercel.app/#";
 
 const QUESTIONS = [
-  { kind: "Routing",   text: "How do I set up middleware in Express?",             chunks: 4 },
-  { kind: "Errors",    text: "How does error-handling middleware work?",            chunks: 4 },
-  { kind: "Static",    text: "How do I serve static files from a directory?",      chunks: 3 },
-  { kind: "Lifecycle", text: "What's the difference between app.use and app.get?", chunks: 3 },
+  { kind: "Finance",  text: "What were GPO's total revenues in 2018?",                       chunks: 10 },
+  { kind: "Finance",  text: "What were GPO billings to the Department of State in 2018?",     chunks: 10 },
+  { kind: "Overview", text: "What were GPO's main priorities and accomplishments in 2018?",   chunks: 10 },
+  { kind: "Audit",    text: "What did the independent auditor's opinion say?",                chunks: 10 },
 ];
 
 function ArrowIcon() {
@@ -50,12 +50,12 @@ export default async function LandingPage() {
             <span className="lp-brand-logo">
               <Image src="/cogito-logo-short.svg" alt="" width={26} height={14} />
             </span>
-            <span>Express Docs</span>
+            <span>GPO Annual Report</span>
             <span className="lp-brand-tag">RAG</span>
           </Link>
           <div className="lp-nav-links">
             <a href="#how-it-works" className="lp-nav-link hide-sm">How it works</a>
-            <a href="https://expressjs.com" target="_blank" rel="noopener noreferrer" className="lp-nav-link hide-sm">Express.js docs</a>
+            <a href="https://www.gpo.gov" target="_blank" rel="noopener noreferrer" className="lp-nav-link hide-sm">GPO</a>
             <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="lp-nav-link hide-sm">GitHub</a>
             <Link href="/chat" className="lp-nav-cta">
               Open chat <ArrowIcon />
@@ -73,15 +73,16 @@ export default async function LandingPage() {
             <span className="pulse" />
             <strong>{chunkCount} chunks</strong>
             <span className="chip-divider" />
-            <span className="mono">expressjs/express @ v5.0.1</span>
+            <span className="mono">U.S. GPO · 2018 Annual Report</span>
           </div>
           <h1 className="lp-hero-title">
-            Ask the Express.js docs{" "}
+            Ask the GPO 2018 Annual Report{" "}
             <span className="accent">in plain English.</span>
           </h1>
           <p className="lp-hero-sub">
-            A retrieval-augmented chat grounded in the official Express.js documentation.
-            Answers cite the exact file and line range, so you always know where they came from.
+            A retrieval-augmented chat grounded in the U.S. Government Publishing Office&apos;s 2018
+            Annual Report. Answers pull exact figures from the financial statements and cite the page
+            and units, so you always know where they came from.
           </p>
           <div className="lp-hero-actions">
             <Link href="/chat" className="lp-btn-primary">
@@ -121,7 +122,7 @@ export default async function LandingPage() {
                 <div className="lp-q-meta">
                   <span>{q.chunks} chunks</span>
                   <span className="sep" />
-                  <span>~1.1s latency</span>
+                  <span>cites page + units</span>
                   <span className="sep" />
                   <span>reranked</span>
                 </div>
@@ -139,13 +140,13 @@ export default async function LandingPage() {
           <div className="lp-how">
             <div className="lp-how-step">
               <div className="lp-how-num"><strong>01</strong> Embed</div>
-              <div className="lp-how-title">Vector search</div>
-              <p className="lp-how-desc">Your query is embedded and matched against <code>{chunkCount}</code> indexed chunks of the Express docs.</p>
+              <div className="lp-how-title">Hybrid search</div>
+              <p className="lp-how-desc">Your query is embedded and matched (dense + BM25) against <code>{chunkCount}</code> indexed chunks of narrative and financial-table rows.</p>
             </div>
             <div className="lp-how-step">
               <div className="lp-how-num"><strong>02</strong> Retrieve</div>
-              <div className="lp-how-title">Top-20 candidates</div>
-              <p className="lp-how-desc">The closest chunks are pulled with their file path and line range preserved as metadata.</p>
+              <div className="lp-how-title">Top candidates</div>
+              <p className="lp-how-desc">The closest chunks are pulled with their page, units, and chunk type preserved as metadata.</p>
             </div>
             <div className="lp-how-step">
               <div className="lp-how-num"><strong>03</strong> Rerank</div>
@@ -155,7 +156,7 @@ export default async function LandingPage() {
             <div className="lp-how-step">
               <div className="lp-how-num"><strong>04</strong> Generate</div>
               <div className="lp-how-title">Cited answer</div>
-              <p className="lp-how-desc">The model writes the answer grounded in the top chunks, with every claim citable to a source.</p>
+              <p className="lp-how-desc">The model answers only from the retrieved context, states units and reporting year, and never guesses a number.</p>
             </div>
           </div>
         </section>
@@ -167,12 +168,12 @@ export default async function LandingPage() {
         <div className="lp-footer-inner">
           <div className="lp-footer-left">
             <span className="status-dot" />
-            <span>Index healthy · expressjs/express</span>
+            <span>Index healthy · U.S. GPO 2018 Annual Report</span>
           </div>
           <div className="lp-footer-right">
             <Link href="/chat">Chat</Link>
             <span className="sep">·</span>
-            <a href="https://expressjs.com" target="_blank" rel="noopener noreferrer">Express.js</a>
+            <a href="https://www.gpo.gov" target="_blank" rel="noopener noreferrer">GPO</a>
             <span className="sep">·</span>
             <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">GitHub</a>
             <span className="sep">·</span>

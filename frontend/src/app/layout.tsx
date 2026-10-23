@@ -15,9 +15,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Express Docs · RAG",
+  title: "GPO Annual Report · RAG",
   description:
-    "Ask questions about the Express.js framework. Hybrid retrieval + cross-encoder reranking over the official docs.",
+    "Ask the U.S. Government Publishing Office 2018 Annual Report. Hybrid retrieval + cross-encoder reranking over the narrative and financial statements.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
