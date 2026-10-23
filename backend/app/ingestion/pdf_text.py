@@ -31,20 +31,27 @@ _MOJIBAKE_RE = re.compile("|".join(re.escape(k) for k in sorted(_MOJIBAKE, key=l
 _HYPHEN_BREAK = re.compile(r"(?<=[^\W\d_])-[ \t]*\r?\n[ \t]*(?=[^\W\d_])")
 
 # A letter-spaced run: >=3 single-char tokens (letter or '.') separated by exactly one
-# space, standing alone (bounded by whitespace / string edges). Two+ spaces, '|', or any
+# space, standing alone (bounded by whitespace / string edges), optionally followed by
+# trailing punctuation glued to the last token ("R E P O R T."). Two+ spaces, '|', or any
 # multi-char token end the run, so real words are never part of it.
+# Only collapsed when genuinely header-like: all letters UPPERCASE and >=4 letters, or a
+# dotted initialism ("U . S ."). Lower/mixed-case or short sequences are left alone.
 _TOK = r"(?:[^\W\d_]|\.)"
-_ALPHA_RUN = re.compile(rf"(?<!\S){_TOK}(?: {_TOK}){{2,}}(?!\S)")
+_TRAIL = r"[.,:;)\]!?]*"
+_ALPHA_RUN = re.compile(rf"(?<!\S)({_TOK}(?: {_TOK}){{2,}})({_TRAIL})(?!\S)")
 # Spaced digits ("2 0 1 8"): >=4 single digits, to avoid touching "1 2 3" style lists.
-_DIGIT_RUN = re.compile(r"(?<!\S)\d(?: \d){3,}(?!\S)")
+_DIGIT_RUN = re.compile(rf"(?<!\S)(\d(?: \d){{3,}})({_TRAIL})(?!\S)")
 
 
 def _join_alpha_run(m: re.Match) -> str:
-    toks = m.group(0).split(" ")
-    alphas = sum(t != "." for t in toks)
-    dots = len(toks) - alphas
-    # Real spaced word, or a dotted initialism like "U . S ."
-    if not (alphas >= 3 or (dots >= 2 and alphas >= 2)):
+    body, trail = m.group(1), m.group(2)
+    toks = body.split(" ")
+    alphas = [t for t in toks if t != "."]
+    dots = len(toks) - len(alphas)
+    if not all(t.isupper() for t in alphas):
+        return m.group(0)
+    # Real spaced header (>=4 caps), or a dotted initialism like "U . S ."
+    if not (len(alphas) >= 4 or (dots >= 2 and len(alphas) >= 2)):
         return m.group(0)
     out: list[str] = []
     n = len(toks)
@@ -54,12 +61,12 @@ def _join_alpha_run(m: re.Match) -> str:
             # initialism continues ("U.S.") if the next letter is itself followed by a dot
             if not (i + 2 < n and toks[i + 2] == "."):
                 out.append(" ")
-    return "".join(out)
+    return "".join(out) + trail
 
 
 def _collapse_letter_spacing(line: str) -> str:
     line = _ALPHA_RUN.sub(_join_alpha_run, line)
-    return _DIGIT_RUN.sub(lambda m: m.group(0).replace(" ", ""), line)
+    return _DIGIT_RUN.sub(lambda m: m.group(1).replace(" ", "") + m.group(2), line)
 
 
 def normalize_text(s: str) -> str:

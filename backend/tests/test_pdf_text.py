@@ -11,9 +11,8 @@ def test_dotted_initialism_and_spaced_word():
 
 def test_pipe_separates_spaced_runs():
     s = "U . S . G O V E R N M E N T P U B L I S H I N G | 2 0 1 8 A N N U A L"
-    out = normalize_text(s)
-    assert out.startswith("U.S. GOVERNMENT")
-    assert "| 2018 " in out
+    # Known v1 limitation: single-spaced inter-word boundaries inside a run are lost.
+    assert normalize_text(s) == "U.S. GOVERNMENTPUBLISHING | 2018 ANNUAL"
 
 
 def test_dehyphenate_line_break():
@@ -48,3 +47,15 @@ def test_prose_unchanged():
 def test_short_single_letter_sequence_untouched():
     assert normalize_text("see Part A B") == "see Part A B"
     assert normalize_text("x y") == "x y"
+
+
+def test_lowercase_and_short_sequences_unchanged():
+    assert normalize_text("a b c") == "a b c"
+    assert normalize_text("I a m") == "I a m"
+    assert normalize_text("Type I I I") == "Type I I I"
+    assert normalize_text("see Part A B C") == "see Part A B C"
+
+
+def test_trailing_punctuation_tolerated():
+    assert normalize_text("R E P O R T.") == "REPORT."
+    assert normalize_text("2 0 1 8.") == "2018."
