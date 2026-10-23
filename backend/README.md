@@ -1,7 +1,31 @@
 # Backend
 
-FastAPI service that runs the self-healing RAG pipeline and exposes
+**Built by:** [Devansh Patel](https://portfolio-website-umber-ten-90.vercel.app/#)
+
+FastAPI service for the Global Economic Prospects RAG chatbot. It answers questions
+from the World Bank report, quoting exact figures with their units and page. It exposes
 `/chat` (synchronous), `/chat/stream` (SSE), and `/health`.
+
+## Request lifecycle
+
+```
+POST /chat  or  POST /chat/stream
+  └─ retrieve_and_rerank(query)
+       ├─ HybridRetriever.retrieve(query)
+       │    ├─ dense:  embed(query) → Chroma top-K (cosine similarity)
+       │    ├─ sparse: tokenise → BM25 top-K
+       │    └─ fuse:   min-max normalise both, weighted sum (HYBRID_ALPHA)
+       └─ Reranker.rerank(query, candidates, top_k)   ← Cohere cross-encoder
+  └─ Generator.generate(query, kept_chunks, history)  ← Gemini or OpenAI
+       └─ answer using only those chunks, with units + page and inline citations
+```
+
+- `/chat` returns `{answer, sources, latency_ms}`.
+- `/chat/stream` sends `token` events as the answer is written, then one `final` event
+  with `{answer, sources, latency_ms}`. If something goes wrong it sends an `error`
+  event.
+- Each source carries its chunk id, title, a short snippet, the score, the **page**, the
+  **units**, and the chunk type (`prose`, `table_row`, or `figure`).
 
 ## Layout
 
@@ -12,158 +36,140 @@ backend/
 │   ├── config.py            # Settings (env-backed, single source of truth)
 │   ├── models/schemas.py    # Pydantic request/response models
 │   ├── routers/
-│   │   ├── chat.py          # POST /chat (sync) + POST /chat/stream (SSE)
+│   │   ├── chat.py          # POST /chat + POST /chat/stream (SSE)
 │   │   └── health.py        # GET  /health
 │   ├── rag/
 │   │   ├── embeddings.py    # Local (MiniLM) and OpenAI embedders
-│   │   ├── retriever.py     # Hybrid: Chroma + BM25 with min-max fusion (+ HyDE embed override)
-│   │   ├── reranker.py      # Cohere rerank wrapper (passthrough if no key)
-│   │   ├── router.py        # Adaptive query router: clear / ambiguous / off_topic
-│   │   ├── grader.py        # LLM per-chunk relevance grading (CRAG)
-│   │   ├── query_rewriter.py# HyDE + healing query rewrite
-│   │   ├── verifier.py      # Post-generation faithfulness check
-│   │   ├── cache.py         # In-memory semantic cache (cosine ≥ threshold)
-│   │   ├── generator.py     # OpenAI / Gemini behind one Protocol (+ token streaming)
-│   │   └── pipeline.py      # Self-healing loop + naive path + SSE generator
+│   │   ├── retriever.py     # Hybrid: Chroma dense + BM25 with min-max fusion
+│   │   ├── reranker.py      # Cohere cross-encoder rerank
+│   │   ├── generator.py     # Gemini / OpenAI behind one interface, with token streaming
+│   │   ├── vision.py        # Describes figures using only the values printed on them
+│   │   ├── pipeline.py      # retrieve → rerank → generate
+│   │   └── idle_manager.py  # Releases loaded models after a period with no requests
 │   └── ingestion/
-│       ├── loader.py        # Walks markdown corpus
-│       ├── chunker.py       # Header-aware sliding-window chunker
-│       └── indexer.py       # Persists Chroma + BM25 indices
+│       ├── pdf_loader.py    # Reads the PDF page by page and assembles each page's content
+│       ├── pdf_text.py      # Text cleanup and running header/footer removal
+│       ├── pdf_layout.py    # Reading-order reassembly for multi-column pages
+│       ├── pdf_tables.py    # Table detection, validation, and per-row records
+│       ├── pdf_figures.py   # Figure detection and description
+│       ├── pdf_chunker.py   # Prose windows, table-row chunks, figure chunks
+│       ├── chunker.py       # The shared Chunk record
+│       └── indexer.py       # Builds the Chroma index, BM25 index, and metadata file
+├── scripts/ingest.py        # CLI: PDF → chunks → indexes
 ├── eval/
-│   ├── dataset.json         # Hand-curated Q&A eval set
-│   └── run_eval.py          # Ragas runner, threshold gate
-├── scripts/
-│   └── ingest.py            # CLI entrypoint for the indexer
-├── data/                    # Persisted indices live here after ingest
-├── requirements.txt
-├── Dockerfile
-└── .env.example
+│   ├── dataset.json         # Verified gold Q&A set
+│   ├── run_eval.py          # Ragas scoring + page-based retrieval hit-rate
+│   └── reports/             # Written reports
+└── tests/                   # pytest suite
 ```
 
-## Local dev
+## Ingestion
 
-See [`../docs/SETUP.md`](../docs/SETUP.md).
+`scripts/ingest.py` turns the PDF into the search index:
 
-## API
+1. **Read and clean.** PyMuPDF extracts each page. The text is cleaned: garbled
+   characters are repaired, words split across line breaks are rejoined, and
+   letter-spaced headers and odd whitespace are collapsed.
+2. **Reading order.** Two-column pages are reassembled left column then right, with
+   full-width titles kept in place.
+3. **Headers and footers.** Lines that repeat across many pages are stripped, while the
+   section each page belongs to is kept as context.
+4. **Tables.** Tables are detected and validated (page layouts such as org charts are
+   rejected). Each row becomes a self-contained key-value record carrying the table's
+   title, units, and page.
+5. **Figures.** Each figure is described using the values printed on it.
+6. **Prose.** Narrative text is split into overlapping windows (`CHUNK_SIZE`,
+   `CHUNK_OVERLAP`) that keep section and page.
 
-### `GET /health`
+Prose, table rows, and figures are all embedded into Chroma and indexed in BM25, each
+tagged with page and units.
 
-Lightweight readiness probe. Returns indexed-chunk count and config:
+## Data on disk (`backend/data/`)
 
-```json
-{
-  "status": "ok",
-  "indexed_chunks": 345,
-  "llm_provider": "openai",
-  "reranker_enabled": true,
-  "self_healing_enabled": true
-}
+Three files must exist before the server can handle requests:
+
+- `chroma/` — Chroma persistent vector store
+- `bm25.pkl` — BM25 index pickle (`{bm25, ids}`)
+- `docs_meta.json` — chunk id → full chunk record (text, section, page, units, chunk
+  type), used to turn fused ids back into chunks
+
+## Configuration
+
+All settings live in `app/config.py` and are read from `.env`
+(see `.env.example`).
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ENVIRONMENT` | `dev` | `dev` or `prod` |
+| `CORS_ORIGINS` | `http://localhost:3000` | Allowed browser origins |
+| `LLM_PROVIDER` | `gemini` | `gemini` or `openai` |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | — / `gemini-1.5-flash` | Gemini settings |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` | OpenAI settings |
+| `EMBEDDING_BACKEND` | `local` | `local` (sentence-transformers) or `openai` |
+| `LOCAL_EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Local embedding model |
+| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model |
+| `RERANKER_ENABLED` | `true` | Turn the Cohere rerank step on or off |
+| `COHERE_API_KEY` / `COHERE_RERANK_MODEL` | — / `rerank-english-v3.0` | Cohere settings |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | `700` / `120` | Prose window size and overlap (characters) |
+| `TOP_K_DENSE` / `TOP_K_BM25` | `15` / `15` | Candidates per retriever before fusion |
+| `TOP_K_RERANK` | `5` | Chunks that reach the LLM prompt |
+| `HYBRID_ALPHA` | `0.5` | `0.0` = pure BM25, `1.0` = pure dense |
+| `SOURCE_PDF_PATH` | `../GEP-Jun-2026.pdf` | The report PDF |
+| `VISION_ENABLED` | `true` | Describe figures during ingestion |
+| `HEADER_FOOTER_MIN_RECURRENCE` | `10` | Lines repeated on at least this many pages are stripped |
+| `CHROMA_PATH` / `BM25_INDEX_PATH` / `DOCS_META_PATH` | `./data/...` | Index locations |
+| `COLLECTION_NAME` | `gep_report` | Chroma collection name |
+| `IDLE_TIMEOUT_SECONDS` | `60` | Seconds without a request before models are released |
+
+The retriever, reranker, embedder, and generator are cached singletons loaded on the
+first request, so changing settings needs a server restart.
+
+## Run it
+
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # Unix/Mac
+pip install -r requirements.txt
+cp .env.example .env            # fill in API keys
+
+# Build the index from the report PDF
+python -m scripts.ingest --source ../GEP-Jun-2026.pdf
+
+# Serve
+uvicorn app.main:app --reload --port 8000
 ```
 
-### `POST /chat`
+`scripts/ingest.py` also accepts `--max-pages N` to process only the first N pages.
 
-Synchronous. Runs the full pipeline and returns the complete answer in one JSON.
+## Eval
 
-Request:
-
-```json
-{
-  "query": "How do I serve static files?",
-  "history": [],
-  "top_k": 5,
-  "use_reranker": true,
-  "use_self_healing": true,
-  "use_hyde": false
-}
+```bash
+python -m eval.run_eval                     # full run, writes a report to eval/reports/
+python -m eval.run_eval --check-thresholds  # CI mode, exits non-zero on regression
 ```
 
-All fields except `query` are optional overrides — useful for the eval harness
-and the playground toggles in the UI. When an override is omitted the server
-default (from `.env`) is used. `use_self_healing: false` runs the legacy
-`retrieve → rerank → generate` path.
+The eval runs the live pipeline over the gold Q&A set and scores it with Ragas, plus a
+page-based retrieval hit-rate (did the retrieved chunks include a reference page).
+Thresholds are defined in `eval/run_eval.py` and checked by GitHub Actions:
 
-Response:
+| Metric | Floor |
+|---|---|
+| faithfulness | 0.70 |
+| answer_relevancy | 0.70 |
+| context_precision | 0.55 |
+| context_recall | 0.55 |
 
-```json
-{
-  "answer": "Use express.static('public') ...",
-  "sources": [
-    {
-      "chunk_id": "...",
-      "source_path": "en/starter/static-files.md",
-      "title": "Serving static files in Express",
-      "snippet": "To serve static files...",
-      "score": 0.9421
-    }
-  ],
-  "latency_ms": 842,
-  "trace": [
-    { "stage": "routing",      "attempt": 1, "message": "Routed as 'clear'" },
-    { "stage": "retrieval",    "attempt": 1, "message": "Hybrid retrieval returned 27 candidates" },
-    { "stage": "grading",      "attempt": 1, "message": "Grader kept 5/5 chunks (avg 0.76)", "score": 0.76 },
-    { "stage": "faithfulness", "attempt": 1, "message": "Faithfulness 1.00", "score": 1.0 },
-    { "stage": "done",         "attempt": 1, "message": "Answer accepted" }
-  ],
-  "from_cache": false,
-  "fallback": false,
-  "attempts": 1
-}
+Ragas needs a scoring LLM: set `OPENAI_API_KEY`, or set `GEMINI_API_KEY` with
+`langchain-google-genai` installed.
+
+## Tests
+
+```bash
+pytest
 ```
 
-- `trace` — ordered `HealingEvent`s; empty when self-healing is off.
-- `from_cache` — answer served from the semantic cache.
-- `fallback` — the answer failed the faithfulness gate and a graceful fallback was returned.
-- `attempts` — how many self-healing iterations the request consumed (1 = first try worked).
+## License
 
-### `POST /chat/stream`
-
-Same request schema, delivered as **Server-Sent Events**. Always runs the
-self-healing path. Event types:
-
-| `event:` | `data:` payload | When |
-| --- | --- | --- |
-| `event` | a `HealingEvent` dict | each pipeline step finishes |
-| `token` | `{ "text": "..." }` | a fragment of the answer |
-| `final` | full `ChatResponse` (answer, sources, trace, …) | after the stream completes |
-| `error` | `{ "message": "..." }` | something failed mid-stream |
-
-`EventSource` only supports GET, so clients `POST` and parse the stream by hand
-(see `frontend/src/lib/api.ts → chatStream`).
-
-## Tuning knobs
-
-All in `.env` / `app/config.py`:
-
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `CHUNK_SIZE` | 700 | Characters per chunk |
-| `CHUNK_OVERLAP` | 120 | Chars shared between adjacent chunks |
-| `TOP_K_DENSE` | 15 | How many dense hits to pull |
-| `TOP_K_BM25` | 15 | How many BM25 hits to pull |
-| `TOP_K_RERANK` | 5 | Final count passed to the LLM |
-| `HYBRID_ALPHA` | 0.5 | Dense weight (1 = pure dense, 0 = pure BM25) |
-| `RERANKER_ENABLED` | true | Toggle the rerank stage |
-
-### Self-healing
-
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `SELF_HEALING_ENABLED` | true | Master switch; off = legacy retrieve → rerank → generate |
-| `ADAPTIVE_ROUTING_ENABLED` | true | Short-circuit off-topic queries before retrieval |
-| `HYDE_ENABLED` | false | Embed a hypothetical answer before dense retrieval (extra LLM call; also opt-in per request) |
-| `RETRIEVAL_GRADING_ENABLED` | true | LLM grades each chunk; weak ones are filtered |
-| `GRADING_KEEP_THRESHOLD` | 0.3 | Min relevance score to keep a chunk |
-| `GRADING_MIN_KEEP_RATIO` | 0.5 | Below this kept-ratio, trigger a query rewrite |
-| `FAITHFULNESS_CHECK_ENABLED` | true | Post-generation grounding check |
-| `FAITHFULNESS_THRESHOLD` | 0.6 | Below this score, rewrite and retry |
-| `MAX_HEALING_ATTEMPTS` | 2 | Retry budget (initial + retries); higher = more latency |
-
-### Semantic cache
-
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `SEMANTIC_CACHE_ENABLED` | true | Short-circuit repeated/paraphrased queries |
-| `SEMANTIC_CACHE_THRESHOLD` | 0.95 | Cosine similarity to count as a cache hit |
-| `SEMANTIC_CACHE_SIZE` | 256 | Entries before LRU eviction |
-
-Re-run the eval after any change.
+MIT

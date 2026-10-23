@@ -1,89 +1,121 @@
 # Deployment
 
-Backend on Render, frontend on Vercel. Both have free tiers that comfortably
-host this project.
+The system has two parts: a containerized FastAPI backend that serves a
+pre-built index, and a Next.js frontend on any Next.js host. Local setup is in
+[`SETUP.md`](SETUP.md).
 
-## Backend → Render
+## How the index is produced
 
-The backend ships a `Dockerfile`; Render builds and runs it directly.
+The backend answers questions from three artifacts in `backend/data/`:
 
-### One-off: build the index locally and commit it
+- `chroma/` — the Chroma vector store (collection `gep_report`)
+- `bm25.pkl` — the BM25 index
+- `docs_meta.json` — chunk records used when blending results
 
-Render's filesystem is ephemeral on free instances — anything written at runtime
-disappears on restart. For a docs corpus this small (~1MB of indices), the
-simplest path is to **ingest locally, commit `backend/data/`, and let Render
-serve those files**.
+Build them from the report PDF, from the `backend/` folder:
 
 ```bash
 cd backend
-python -m scripts.ingest --source ../external/expressjs.com/en
-
-# Allow data/ in git for the deploy commit:
-git add -f data/chroma data/bm25.pkl data/docs_meta.json
-git commit -m "chore: ship pre-built index"
-git push
+python -m scripts.ingest --source ../GEP-Jun-2026.pdf
 ```
 
-(If you don't want indices in git, the alternative is a build-time ingestion
-step in `render.yaml` — but you'll pay the embed cost on every deploy.)
+The backend image copies `backend/data/` into the container, so build the index
+before building the image. Then check it:
 
-### Create the service
+```bash
+uvicorn app.main:app --port 8000
+curl http://localhost:8000/health      # indexed chunks should be > 0
+```
 
-1. Push the repo to GitHub.
-2. Render → **New** → **Web Service** → connect the repo.
-3. Settings:
-   - **Environment**: Docker
-   - **Branch**: `main`
-   - **Root Directory**: `backend`
-   - **Health Check Path**: `/health`
-4. Environment variables (copy from your local `.env`):
-   - `LLM_PROVIDER=gemini`
-   - `GEMINI_API_KEY=...`
-   - `COHERE_API_KEY=...` (optional)
-   - `CORS_ORIGINS=https://<your-vercel-domain>.vercel.app`
-5. Deploy. First build takes ~5 min (PyTorch wheel is large).
+The embedding backend used at ingest time (`EMBEDDING_BACKEND`) must be the
+same one the deployed backend uses, so the query vectors match the stored ones.
 
-The service will be live at `https://<service-name>.onrender.com`.
+## Backend
 
-### Free-tier caveats
+The backend ships a `Dockerfile` (Python 3.11) that installs the requirements,
+copies `app/`, `eval/`, `scripts/` and `data/`, and runs:
 
-- Render free instances **spin down after 15 min of inactivity**. The first
-  request after that takes 30–60s to wake up. The frontend handles this by
-  showing the "backend offline" pill until /health resolves.
-- 512MB RAM. Sentence-transformers' MiniLM loads at ~250MB which fits, but
-  if you bump to a bigger embedding model you'll need a paid plan.
+```
+uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+```
 
-## Frontend → Vercel
+It listens on `$PORT`, defaulting to 8000.
 
-1. Push the repo.
-2. Vercel → **Add New** → **Project** → import the repo.
-3. Settings:
-   - **Framework Preset**: Next.js (auto-detected)
-   - **Root Directory**: `frontend`
-4. Environment variable:
-   - `NEXT_PUBLIC_API_BASE_URL=https://<your-render-service>.onrender.com`
-5. Deploy.
+```bash
+cd backend
+docker build -t gep-rag-backend .
+docker run -p 8000:8000 --env-file .env gep-rag-backend
+```
 
-Vercel will give you `https://<project>.vercel.app`. Add this URL to
-`CORS_ORIGINS` on the Render service and redeploy the backend.
+Any container host works. Point the host at the `backend/` folder, use the
+Dockerfile, and set `/health` as the health check path.
 
-## Custom domain
+### Environment variables
 
-Both Render and Vercel make this two clicks each. If you're using a single
-apex domain (e.g. `yourdomain.com`):
+Set these on the backend host (same names as `backend/.env.example`):
 
-- Frontend: `yourdomain.com` → Vercel (CNAME or A records)
-- Backend: `api.yourdomain.com` → Render (CNAME)
-- Update `NEXT_PUBLIC_API_BASE_URL` on Vercel to `https://api.yourdomain.com`
-- Update `CORS_ORIGINS` on Render to `https://yourdomain.com`
+| Variable | Purpose |
+| --- | --- |
+| `ENVIRONMENT` | `dev` or `prod` |
+| `CORS_ORIGINS` | The frontend's public origin, e.g. `https://<your-frontend-domain>` |
+| `LLM_PROVIDER` | `gemini` (default) or `openai` |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | Used when the provider is `gemini` |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | Used when the provider is `openai` (also for OpenAI embeddings) |
+| `EMBEDDING_BACKEND` | `local` (default) or `openai` |
+| `RERANKER_ENABLED`, `COHERE_API_KEY` | Cohere reranker switch and key |
+| `CHUNK_SIZE`, `CHUNK_OVERLAP` | Chunking settings |
+| `TOP_K_DENSE`, `TOP_K_BM25`, `TOP_K_RERANK` | Retrieval sizes |
+| `HYBRID_ALPHA` | Dense/BM25 blend (`0.0` to `1.0`) |
 
-## After deploy: verify
+Keep API keys in the host's secret or environment settings, not in the repo.
+Settings load once at startup, so redeploy or restart after changing them.
+
+### Sizing notes
+
+- With `EMBEDDING_BACKEND=local`, the MiniLM model (about 80MB) loads in
+  memory and downloads on first start. Allow room for it plus PyTorch.
+- The first image build takes a few minutes because PyTorch is large.
+
+## Frontend
+
+Deploy `frontend/` to any host that runs Next.js 14.
+
+1. Set the project root to `frontend`.
+2. Use the standard Next.js build (`npm run build`) and start (`npm start`)
+   commands, or your host's built-in Next.js preset.
+3. Set the environment variable:
+
+   ```
+   NEXT_PUBLIC_API_BASE_URL=https://<your-backend-domain>
+   ```
+
+   This value is read at build time, so rebuild the frontend after changing it.
+4. Add the frontend's public URL to `CORS_ORIGINS` on the backend and
+   redeploy the backend.
+
+## Custom domains
+
+If you use one domain for both parts:
+
+- Frontend: `yourdomain.com`
+- Backend: `api.yourdomain.com`
+- `NEXT_PUBLIC_API_BASE_URL` on the frontend: `https://api.yourdomain.com`
+- `CORS_ORIGINS` on the backend: `https://yourdomain.com`
+
+## Verify
 
 ```bash
 curl https://api.yourdomain.com/health
-# Should show indexed_chunks > 0
+# status "ok" and indexed chunks > 0
 ```
 
-Open the frontend URL, ask a question, confirm sources render. If you see
-"backend offline", the Render service is asleep or CORS is misconfigured —
-check the browser network tab.
+Open the frontend URL, ask a question such as "What is the 2026 GDP growth
+forecast for Sub-Saharan Africa?", and confirm the answer streams in and the
+sources panel shows the page and units. If the UI shows "backend offline",
+check that the backend is running, `NEXT_PUBLIC_API_BASE_URL` is correct, and
+`CORS_ORIGINS` includes the frontend origin.
+
+## Updating the report or settings
+
+To change the report or chunking settings, re-run the ingest step, rebuild the
+backend image so it carries the new `backend/data/`, and redeploy.

@@ -1,7 +1,9 @@
 # Frontend
 
-Next.js 14 (App Router) UI. Talks to the backend through a same-origin `/api`
-proxy (no CORS), and streams answers live over Server-Sent Events.
+The web UI for the Global Economic Prospects RAG chatbot. It is a Next.js 14 (App
+Router) app with a landing page and a chat page. Answers stream in live, and each
+answer comes with a sources panel showing the page, units and score of the chunks
+it was built from.
 
 ## Layout
 
@@ -9,40 +11,51 @@ proxy (no CORS), and streams answers live over Server-Sent Events.
 frontend/
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx                # Fonts (DM Sans / JetBrains Mono)
-│   │   ├── page.tsx                  # Landing page (Server Component, dynamic chunk count)
+│   │   ├── layout.tsx                # Fonts and page shell
+│   │   ├── page.tsx                  # Landing page (shows the indexed chunk count)
 │   │   ├── chat/page.tsx             # Chat UI (Client Component, SSE streaming)
-│   │   ├── api/chat/stream/route.ts  # Route Handler: pipes backend SSE through unbuffered
-│   │   └── globals.css               # Cogito design tokens + all component styles
+│   │   ├── api/chat/stream/route.ts  # Route Handler: passes the backend SSE stream through
+│   │   └── globals.css               # Design tokens and component styles
 │   ├── components/
-│   │   ├── MessageBubble.tsx         # Assistant turn: answer, live stage, trace, sources trigger
-│   │   ├── HealingTrace.tsx          # Collapsible self-healing timeline + badges
-│   │   └── SourcesPanel.tsx          # Slide-in retrieved-sources panel
+│   │   ├── MessageBubble.tsx         # One assistant turn: answer and sources trigger
+│   │   ├── SourcesPanel.tsx          # Slide-in panel of retrieved sources
+│   │   └── StatusPill.tsx            # Backend health indicator
 │   └── lib/
-│       └── api.ts                    # Typed client: chat(), chatStream() SSE parser, health()
-├── package.json
-├── next.config.js                    # /api/chat + /api/health rewrites
+│       └── api.ts                    # Typed client: chat(), chatStream(), health()
+├── next.config.js                    # /api/chat and /api/health rewrites
 ├── tailwind.config.js
 └── .env.example
 ```
 
 ## Routes
 
-| Route | Type | What |
-| --- | --- | --- |
-| `/` | Server Component | Landing page; fetches `/health` for the live chunk count (ISR, 60s) |
-| `/chat` | Client Component | Chat interface; supports `?q=<question>` to auto-ask on load |
+| Route | What |
+| --- | --- |
+| `/` | Landing page. Reads `/health` for the indexed chunk count. |
+| `/chat` | Chat interface. `?q=<question>` asks a question on load. |
 
-## How requests reach the backend
+## How it talks to the backend
 
-The browser never calls the backend directly — every call is same-origin under
-`/api`, so there's no CORS dependency:
+The browser only calls same-origin `/api` paths, so no CORS setup is needed:
 
-- `/api/chat` and `/api/health` → simple **rewrites** in `next.config.js`.
-- `/api/chat/stream` → a **Route Handler** (`app/api/chat/stream/route.ts`) that
-  pipes the upstream SSE stream straight through. This *cannot* be a rewrite:
-  Next.js rewrites buffer `text/event-stream` responses, which would make every
-  healing event arrive at once and kill the live trace.
+- `/api/chat` and `/api/health` are rewrites in `next.config.js` that forward to the
+  backend's `/chat` and `/health`.
+- `/api/chat/stream` is a Route Handler (`src/app/api/chat/stream/route.ts`) that
+  passes the backend's Server-Sent Events stream straight through. It is a Route
+  Handler rather than a rewrite because rewrites buffer `text/event-stream`
+  responses.
+
+`src/lib/api.ts` holds all backend calls. `chatStream()` POSTs to `/api/chat/stream`
+and parses the event stream, calling `onToken` as answer text arrives and returning
+the final answer with its sources.
+
+## Chat features
+
+- **Token streaming** — the answer appears as it is generated.
+- **Sources panel** — lists the retrieved chunks with their page, units, chunk type
+  (prose, table row or figure) and score.
+- **Composer toggles** — `reranker` turns Cohere reranking on or off, and `stream`
+  switches between SSE streaming and the single `/chat` call.
 
 ## Local dev
 
@@ -52,28 +65,25 @@ cp .env.example .env.local   # set NEXT_PUBLIC_API_BASE_URL
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000. The backend should be running on the address set in
+`NEXT_PUBLIC_API_BASE_URL`.
+
+## Scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the dev server |
+| `npm run build` | Production build |
+| `npm run start` | Serve the production build |
+| `npm run lint` | Run ESLint |
+| `npm run typecheck` | Run `tsc --noEmit` |
 
 ## Environment
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | Backend origin the `/api` proxy forwards to. `NEXT_PUBLIC_` is **baked in at build time** — on Vercel you must redeploy after changing it. |
+| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | Backend address the `/api` proxy forwards to. It is baked in at build time, so rebuild after changing it. |
 
-## Chat features
+## License
 
-- **Live healing trace** — each pipeline stage (route → retrieve → grade →
-  rewrite → verify → done) renders as a timeline under the answer, with
-  `cached` / `fallback` / `N attempts` badges.
-- **Token streaming** — the answer streams in with a blinking cursor.
-- **Composer toggles** — `reranker`, `hyde`, and `stream` (SSE on/off). Turning
-  `stream` off uses the synchronous `/chat` call and renders the full trace once
-  the answer arrives.
-- **Sources panel** — slide-in panel listing the retrieved chunks with scores.
-
-## Design notes
-
-Cogito design system — DM Sans for UI, JetBrains Mono for metadata, Chathams
-Blue (`#156082`) accent on a light surface. Landing-page styles are namespaced
-with an `lp-` prefix and the self-healing trace with an `ht-` prefix so the two
-routes share one stylesheet without collisions.
+MIT

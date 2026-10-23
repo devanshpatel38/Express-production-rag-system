@@ -1,22 +1,23 @@
 # Setup
 
-Local dev. Deployment is in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+Local setup from scratch. Deployment is in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
-## Prereqs
+## Prerequisites
 
-- Python 3.11+
+- Python 3.11
 - Node 20+
 - Git
+- The report PDF: `GEP-Jun-2026.pdf` (World Bank Global Economic Prospects)
 - An API key for **one** LLM provider:
-  - [Gemini](https://aistudio.google.com/apikey) — free tier, default
-  - [OpenAI](https://platform.openai.com/api-keys) — paid
-- Optional: [Cohere](https://dashboard.cohere.com/api-keys) for the reranker (free tier covers dev)
+  - [Gemini](https://aistudio.google.com/apikey) (default)
+  - [OpenAI](https://platform.openai.com/api-keys)
+- A [Cohere](https://dashboard.cohere.com/api-keys) API key for the reranker
 
 ## 1. Clone
 
 ```bash
-git clone <your-fork-url> express-docs-rag
-cd express-docs-rag
+git clone <your-repo-url>
+cd <your-repo-folder>
 ```
 
 ## 2. Backend
@@ -28,49 +29,65 @@ source .venv/bin/activate           # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# Open .env and set at minimum:
-#   LLM_PROVIDER=gemini
-#   GEMINI_API_KEY=...
-# Optionally set COHERE_API_KEY for reranking.
 ```
 
-The first run will download the sentence-transformers model (~80MB).
+Open `.env` and set at least:
 
-## 3. Get the Express docs
-
-We use the official `expressjs/expressjs.com` repo as the corpus.
-
-```bash
-# From the project root
-git clone --depth 1 https://github.com/expressjs/expressjs.com.git external/expressjs.com
+```
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=...
+COHERE_API_KEY=...
 ```
 
-This gives you `external/expressjs.com/en/` — that's the directory we feed to
-the ingest script.
+To use OpenAI instead, set `LLM_PROVIDER=openai` and `OPENAI_API_KEY=...`
+(`OPENAI_MODEL` picks the model).
+
+Settings you can change in `.env`:
+
+| Variable | What it does |
+| --- | --- |
+| `LLM_PROVIDER` | `gemini` (default) or `openai` |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | Gemini key and model |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | OpenAI key and model |
+| `EMBEDDING_BACKEND` | `local` (sentence-transformers MiniLM, default) or `openai` |
+| `RERANKER_ENABLED`, `COHERE_API_KEY` | Turn the Cohere reranker on or off, and its key |
+| `CHUNK_SIZE`, `CHUNK_OVERLAP` | Size and overlap of the prose chunks |
+| `TOP_K_DENSE`, `TOP_K_BM25` | Candidates from each retriever before blending |
+| `TOP_K_RERANK` | How many chunks reach the LLM prompt |
+| `HYBRID_ALPHA` | Blend weight: `0.0` = pure BM25, `1.0` = pure dense, `0.5` default |
+| `CORS_ORIGINS` | Allowed frontend origin (default `http://localhost:3000`) |
+
+With the local embedding backend, the sentence-transformers model (about 80MB)
+downloads on the first run.
+
+The index is stored in `backend/data/chroma/`, `backend/data/bm25.pkl` and
+`backend/data/docs_meta.json`. The vector collection is named `gep_report`.
+
+## 3. Add the report PDF
+
+Place the report at the repo root as `GEP-Jun-2026.pdf`:
+
+```
+<repo root>/
+├── GEP-Jun-2026.pdf
+├── backend/
+└── frontend/
+```
 
 ## 4. Build the index
 
 ```bash
 cd backend
-python -m scripts.ingest --source ../external/expressjs.com/en
+python -m scripts.ingest --source ../GEP-Jun-2026.pdf
 ```
 
-Expected output:
+The script reads the PDF, cleans the text, turns tables into per-row records,
+describes the figures, chunks the prose, and writes the vector store and BM25
+index into `backend/data/`. Each run rebuilds the index from scratch.
 
-```
-Ingesting from: /abs/path/external/expressjs.com/en
-Chunk size=700, overlap=120
-Processed 73 files → 1234 chunks
-  embedded 64/1234
-  ...
-Done.
-  chunks: 1234
-  vector_dim: 384
-  chroma_path: ./data/chroma
-  bm25_path: ./data/bm25.pkl
-```
+Figure descriptions use your configured LLM, so the key from step 2 must be set.
 
-The `backend/data/` directory now holds the persisted indices.
+For a quick trial on part of the report, add `--max-pages N`.
 
 ## 5. Serve
 
@@ -79,16 +96,20 @@ The `backend/data/` directory now holds the persisted indices.
 uvicorn app.main:app --reload --port 8000
 ```
 
-Sanity-check:
+Check that it is up:
 
 ```bash
 curl http://localhost:8000/health
-# {"status":"ok","indexed_chunks":1234,"llm_provider":"gemini","reranker_enabled":true}
 
 curl -X POST http://localhost:8000/chat \
   -H 'Content-Type: application/json' \
-  -d '{"query":"How do I define a GET route?"}'
+  -d '{"query":"What is the 2026 GDP growth forecast for Sub-Saharan Africa?"}'
 ```
+
+`/health` reports `status: ok` and the number of indexed chunks once the index
+is in place. API docs are at http://localhost:8000/docs.
+
+Settings load once at startup, so restart the server after editing `.env`.
 
 ## 6. Frontend
 
@@ -98,30 +119,47 @@ In a new terminal:
 cd frontend
 npm install
 cp .env.example .env.local
-# NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 should already be correct.
+```
+
+`.env.local` needs:
+
+```
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
+
+Then start it:
+
+```bash
 npm run dev
 ```
 
 Open http://localhost:3000.
 
-## 7. Run the eval (optional but recommended)
+Other frontend commands: `npm run build`, `npm run typecheck`, `npm run lint`.
+
+## 7. Run the eval (optional)
 
 ```bash
 cd backend
 python -m eval.run_eval
 ```
 
-You'll see the four Ragas metrics plus retrieval hit-rate and p50 latency,
-and a JSON report saved to `eval/reports/`.
+This prints the Ragas metrics and saves a report to `backend/eval/reports/`.
+Ragas needs a scoring LLM: set `OPENAI_API_KEY`, or set `GEMINI_API_KEY`
+(`langchain-google-genai` is in `requirements.txt`).
 
-## Common gotchas
+## Troubleshooting
 
-- **`Index not ready` from /chat**: you didn't run ingestion (step 4), or you
-  ran it in a different working directory. The script saves to `./data/`
-  relative to wherever you ran it.
-- **OOM on ingest**: drop `CHUNK_SIZE` or run on a machine with >4GB free.
-- **`OPENAI_API_KEY missing` errors during eval**: Ragas needs a scoring LLM.
-  Either set `OPENAI_API_KEY`, or make sure `GEMINI_API_KEY` is set and the
-  `langchain-google-genai` package is installed (it's in requirements.txt).
-- **Cohere 429s**: the reranker free tier is rate-limited. Set
-  `RERANKER_ENABLED=false` to skip it during heavy local runs.
+- **`/health` shows `degraded` or `/chat` says the index is not ready**:
+  run the ingest step (step 4) from the `backend/` folder. Paths like
+  `./data/` are relative to where you run the command.
+- **Ingest cannot find the PDF**: check that `GEP-Jun-2026.pdf` is at the repo
+  root and that you passed `--source ../GEP-Jun-2026.pdf` from `backend/`.
+- **Frontend shows "backend offline"**: check that uvicorn is running on port
+  8000 and that `NEXT_PUBLIC_API_BASE_URL` matches it. Restart `npm run dev`
+  after changing `.env.local`.
+- **Browser CORS errors**: make sure `CORS_ORIGINS` in `backend/.env` includes
+  the exact origin of the frontend, then restart the backend.
+- **Cohere 429 errors**: the reranker free tier is rate-limited. Set
+  `RERANKER_ENABLED=false` for heavy local runs.
+- **Out of memory on ingest**: close other apps or lower `CHUNK_SIZE`.
