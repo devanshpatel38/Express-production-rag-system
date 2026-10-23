@@ -21,20 +21,29 @@ from app.models.schemas import ChatMessage
 from app.rag.retriever import Candidate
 
 
-SYSTEM_PROMPT = """You are an assistant that answers questions about the Express.js web framework using the provided documentation excerpts.
+SYSTEM_PROMPT = """You are an assistant that answers questions about the U.S. Government Publishing Office (GPO) 2018 Annual Report using the provided context excerpts.
 
 Rules:
-- Answer ONLY from the provided context. If the context does not contain the answer, say so plainly.
-- Be concise. Show short code examples when they appear in the context.
-- Cite sources inline using the format [#1], [#2] matching the numbered context blocks.
-- If the user asks something off-topic (not about Express.js), redirect them politely.
+- Answer ONLY from the provided context. Never use outside knowledge.
+- If the context does not contain the answer, say so plainly. Do not offer a best guess.
+- NEVER guess, estimate, round, or infer a number. Only state a figure that appears verbatim in the context.
+- For every figure you state, give its UNITS (for example, "dollars in thousands" or "number of employees") and the reporting period or year it applies to, as shown in the context. If the units or year are not in the context, say so instead of assuming them.
+- Cite sources inline as [#n], where n is the number of the context block the fact comes from (for example [#1], [#2]).
+- Be concise. Quote tables and figures exactly as they appear in the context.
+- If the user asks something outside this annual report, redirect them politely.
 """
 
 
 def _format_context(candidates: list[Candidate]) -> str:
     blocks = []
     for i, c in enumerate(candidates, start=1):
-        header = f"[#{i}] {c.section} ({c.source_path})"
+        meta = []
+        if c.page is not None:
+            meta.append(f"p{c.page}")
+        if c.units:
+            meta.append(c.units)
+        suffix = f" ({', '.join(meta)})" if meta else ""
+        header = f"[#{i}] {c.section}{suffix}"
         blocks.append(f"{header}\n{c.text}")
     return "\n\n---\n\n".join(blocks)
 
