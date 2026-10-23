@@ -2,12 +2,10 @@
 
   POST /chat         : synchronous, returns full ChatResponse JSON.
                        Used by the eval harness and by clients that don't want SSE.
-  POST /chat/stream  : Server-Sent Events. Emits healing events as they happen,
-                       then streams the answer token-by-token, then a final
-                       payload with sources and the full trace.
+  POST /chat/stream  : Server-Sent Events. Streams the answer token-by-token,
+                       then a final payload with sources.
 
-Both share the same request schema. The SSE endpoint always runs the self-healing
-pipeline (streaming the naive path adds complexity for no real benefit).
+Both share the same request schema.
 """
 from __future__ import annotations
 
@@ -17,7 +15,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.models.schemas import ChatRequest, ChatResponse
-from app.rag.pipeline import run_pipeline, stream_self_healing
+from app.rag.pipeline import run_pipeline, stream_pipeline
 from app.rag.idle_manager import record_request
 
 
@@ -33,8 +31,6 @@ def chat(req: ChatRequest) -> ChatResponse:
             history=req.history,
             top_k=req.top_k,
             use_reranker=req.use_reranker,
-            use_self_healing=req.use_self_healing,
-            use_hyde=req.use_hyde,
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=f"Index not ready: {e}") from e
@@ -45,10 +41,6 @@ def chat(req: ChatRequest) -> ChatResponse:
         answer=result.answer,
         sources=result.sources,
         latency_ms=result.latency_ms,
-        trace=result.trace,
-        from_cache=result.from_cache,
-        fallback=result.fallback,
-        attempts=result.attempts,
     )
 
 
@@ -62,7 +54,6 @@ def chat_stream(req: ChatRequest):
     """SSE endpoint. Browser EventSource doesn't speak POST natively, so the
     frontend uses fetch() + a ReadableStream reader. The events we emit:
 
-      event: event   -> a HealingEvent dict (each loop step)
       event: token   -> a fragment of the answer text
       event: final   -> the full ChatResponse payload at the end
       event: error   -> something blew up; payload has {message}
@@ -71,12 +62,11 @@ def chat_stream(req: ChatRequest):
 
     def gen():
         try:
-            for event_type, payload in stream_self_healing(
+            for event_type, payload in stream_pipeline(
                 query=req.query,
                 history=req.history,
                 top_k=req.top_k,
                 use_reranker=req.use_reranker,
-                use_hyde=req.use_hyde,
             ):
                 yield _sse_format(event_type, payload)
         except FileNotFoundError as e:
