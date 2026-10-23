@@ -35,6 +35,9 @@ class Candidate:
     title: str
     section: str
     score: float  # fused score after normalization
+    page: int | None = None  # 1-based PDF page; None when unknown
+    units: str = ""
+    chunk_type: str = "prose"
 
     def to_dict(self) -> dict:
         return {
@@ -44,6 +47,9 @@ class Candidate:
             "title": self.title,
             "section": self.section,
             "score": self.score,
+            "page": self.page,
+            "units": self.units,
+            "chunk_type": self.chunk_type,
         }
 
 
@@ -130,6 +136,9 @@ class HybridRetriever:
             m = self._meta.get(cid)
             if not m:
                 continue
+            # Older indexes predate these fields; fall back to defaults.
+            # page 0 means "unknown" in the chunker, so it maps to None here.
+            page = m.get("page") or None
             out.append(
                 Candidate(
                     chunk_id=cid,
@@ -138,6 +147,9 @@ class HybridRetriever:
                     title=m["title"],
                     section=m["section"],
                     score=fused[cid],
+                    page=int(page) if page is not None else None,
+                    units=m.get("units") or "",
+                    chunk_type=m.get("chunk_type") or "prose",
                 )
             )
         return out

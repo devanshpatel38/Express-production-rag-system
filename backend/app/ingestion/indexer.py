@@ -28,6 +28,16 @@ def tokenize(text: str) -> list[str]:
     return [t.lower() for t in _TOKEN_RE.findall(text)]
 
 
+def _str_or_empty(v: object) -> str:
+    # Chroma rejects None metadata values; absent text fields become "".
+    return "" if v is None else str(v)
+
+
+def _int_or_zero(v: object) -> int:
+    # Chroma rejects None metadata values; an absent page becomes 0 (= unknown).
+    return 0 if v is None else int(v)  # type: ignore[call-overload]
+
+
 def _chroma_client(path: str) -> chromadb.PersistentClient:
     os.makedirs(path, exist_ok=True)
     return chromadb.PersistentClient(path=path)
@@ -58,6 +68,10 @@ def build_indices(chunks: list[Chunk]) -> dict:
             "section": c.section,
             "char_start": c.char_start,
             "char_end": c.char_end,
+            "page": _int_or_zero(c.page),
+            "chunk_type": _str_or_empty(c.chunk_type),
+            "table_title": _str_or_empty(c.table_title),
+            "units": _str_or_empty(c.units),
         }
         for c in chunks
     ]
@@ -80,7 +94,16 @@ def build_indices(chunks: list[Chunk]) -> dict:
 
     # We keep a side-car json so the API can hydrate chunk metadata cheaply
     # without going to Chroma for every retrieval.
-    meta_index = {c.chunk_id: c.to_dict() for c in chunks}
+    meta_index = {
+        c.chunk_id: {
+            **c.to_dict(),
+            "page": _int_or_zero(c.page),
+            "chunk_type": _str_or_empty(c.chunk_type),
+            "table_title": _str_or_empty(c.table_title),
+            "units": _str_or_empty(c.units),
+        }
+        for c in chunks
+    }
     with open(s.docs_meta_path, "w", encoding="utf-8") as f:
         json.dump(meta_index, f)
 
