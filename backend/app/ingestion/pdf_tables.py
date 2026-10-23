@@ -83,7 +83,7 @@ def _title_above(bbox, blocks: list[Block]) -> str:
     best = None
     for b in blocks:
         t = " ".join(b.text.split())
-        if b.y1 <= bbox[1] + 1 and t and not _UNITS.match(t) and not _DIGIT.fullmatch(t):
+        if b.y1 <= bbox[1] + 1 and t and not _UNITS.match(t) and not t.isdigit():
             if best is None or b.y1 > best.y1:
                 best = b
     return " ".join(best.text.split()) if best else ""

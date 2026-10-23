@@ -18,7 +18,7 @@ def _snippet(text: str, n: int = 220) -> str:
 
 
 def _sources_from(candidates: list[Candidate]) -> list[Source]:
-    # page/units/chunk_type are read defensively: they are added to Candidate later.
+    # page/units/chunk_type are read defensively: they exist on Candidate; getattr is just defensive.
     return [
         Source(
             chunk_id=c.chunk_id,
