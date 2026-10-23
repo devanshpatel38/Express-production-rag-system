@@ -1,25 +1,19 @@
 # Setup
 
-Local dev. Deployment is in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+Local setup from scratch. Deployment is in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
-## Prereqs
+## Prerequisites
 
 - Python 3.11+
 - Node 20+
 - Git
+- The GPO 2018 Annual Report PDF
 - An API key for **one** LLM provider:
-  - [Gemini](https://aistudio.google.com/apikey) — free tier, default
-  - [OpenAI](https://platform.openai.com/api-keys) — paid
-- Optional: [Cohere](https://dashboard.cohere.com/api-keys) for the reranker (free tier covers dev)
+  - [Gemini](https://aistudio.google.com/apikey) (default)
+  - [OpenAI](https://platform.openai.com/api-keys)
+- Optional: a [Cohere](https://dashboard.cohere.com/api-keys) API key for the reranker
 
-## 1. Clone
-
-```bash
-git clone <your-fork-url> express-docs-rag
-cd express-docs-rag
-```
-
-## 2. Backend
+## 1. Backend
 
 ```bash
 cd backend
@@ -28,69 +22,81 @@ source .venv/bin/activate           # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# Open .env and set at minimum:
-#   LLM_PROVIDER=gemini
-#   GEMINI_API_KEY=...
-# Optionally set COHERE_API_KEY for reranking.
 ```
 
-The first run will download the sentence-transformers model (~80MB).
+Open `.env` and set at least:
 
-## 3. Get the Express docs
-
-We use the official `expressjs/expressjs.com` repo as the corpus.
-
-```bash
-# From the project root
-git clone --depth 1 https://github.com/expressjs/expressjs.com.git external/expressjs.com
+```
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=...
 ```
 
-This gives you `external/expressjs.com/en/` — that's the directory we feed to
-the ingest script.
+To use OpenAI instead, set `LLM_PROVIDER=openai` and `OPENAI_API_KEY`. Set
+`COHERE_API_KEY` to turn on reranking, or set `RERANKER_ENABLED=false` to skip it.
 
-## 4. Build the index
+By default embeddings are computed locally with sentence-transformers
+(`EMBEDDING_BACKEND=local`). The model downloads on first run. To use OpenAI
+embeddings, set `EMBEDDING_BACKEND=openai` and `OPENAI_API_KEY`.
+
+### Settings you can tune
+
+| Variable | What it does |
+| --- | --- |
+| `LLM_PROVIDER` | `gemini` or `openai` |
+| `GEMINI_MODEL` / `OPENAI_MODEL` | Model name for the chosen provider |
+| `EMBEDDING_BACKEND` | `local` or `openai` |
+| `RERANKER_ENABLED` | `true` or `false` |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | Size and overlap of prose chunks, in characters |
+| `TOP_K_DENSE` / `TOP_K_BM25` | Candidates each retriever returns before blending |
+| `TOP_K_RERANK` | How many chunks reach the LLM prompt |
+| `HYBRID_ALPHA` | Blend weight: `0.0` is BM25 only, `1.0` is dense only, `0.5` is the default |
+
+If you change `CHUNK_SIZE`, `CHUNK_OVERLAP`, or the embedding settings, rebuild the
+index (step 3).
+
+## 2. Add the report PDF
+
+Place the report at the repo root with this exact name:
+
+```
+GPO-Anual-report.pdf
+```
+
+## 3. Build the index
 
 ```bash
 cd backend
-python -m scripts.ingest --source ../external/expressjs.com/en
+python -m scripts.ingest --source ../GPO-Anual-report.pdf
 ```
 
-Expected output:
+This reads the PDF, cleans the text, turns each financial table into per-row records,
+chunks the prose, and writes the index to `backend/data/`:
 
-```
-Ingesting from: /abs/path/external/expressjs.com/en
-Chunk size=700, overlap=120
-Processed 73 files → 1234 chunks
-  embedded 64/1234
-  ...
-Done.
-  chunks: 1234
-  vector_dim: 384
-  chroma_path: ./data/chroma
-  bm25_path: ./data/bm25.pkl
-```
+- `chroma/` — the vector store (collection `gpo_report`)
+- `bm25.pkl` — the BM25 keyword index
+- `docs_meta.json` — the full record for every chunk
 
-The `backend/data/` directory now holds the persisted indices.
+All three files are needed before the server can answer questions.
 
-## 5. Serve
+## 4. Serve
 
 ```bash
 # Still in backend/
 uvicorn app.main:app --reload --port 8000
 ```
 
-Sanity-check:
+Check it:
 
 ```bash
 curl http://localhost:8000/health
-# {"status":"ok","indexed_chunks":1234,"llm_provider":"gemini","reranker_enabled":true}
+# {"status":"ok","indexed_chunks":<n>,"llm_provider":"gemini","reranker_enabled":true}
 
 curl -X POST http://localhost:8000/chat \
   -H 'Content-Type: application/json' \
-  -d '{"query":"How do I define a GET route?"}'
+  -d '{"query":"What were GPO'"'"'s billings to the Department of State in 2018?"}'
 ```
 
-## 6. Frontend
+## 5. Frontend
 
 In a new terminal:
 
@@ -98,30 +104,33 @@ In a new terminal:
 cd frontend
 npm install
 cp .env.example .env.local
-# NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 should already be correct.
+# NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 npm run dev
 ```
 
 Open http://localhost:3000.
 
-## 7. Run the eval (optional but recommended)
+## 6. Run the eval (optional)
 
 ```bash
 cd backend
 python -m eval.run_eval
 ```
 
-You'll see the four Ragas metrics plus retrieval hit-rate and p50 latency,
-and a JSON report saved to `eval/reports/`.
+This scores the pipeline with Ragas and saves a report to `eval/reports/`. Ragas needs
+a scoring LLM: set `OPENAI_API_KEY`, or set `GEMINI_API_KEY` (the
+`langchain-google-genai` package is in `requirements.txt`).
 
-## Common gotchas
+## Troubleshooting
 
-- **`Index not ready` from /chat**: you didn't run ingestion (step 4), or you
-  ran it in a different working directory. The script saves to `./data/`
-  relative to wherever you ran it.
-- **OOM on ingest**: drop `CHUNK_SIZE` or run on a machine with >4GB free.
-- **`OPENAI_API_KEY missing` errors during eval**: Ragas needs a scoring LLM.
-  Either set `OPENAI_API_KEY`, or make sure `GEMINI_API_KEY` is set and the
-  `langchain-google-genai` package is installed (it's in requirements.txt).
-- **Cohere 429s**: the reranker free tier is rate-limited. Set
-  `RERANKER_ENABLED=false` to skip it during heavy local runs.
+- **`/health` shows `"status":"degraded"` or `indexed_chunks` is 0**: the index has not
+  been built, or it was built from a different working directory. Run the ingest
+  command from `backend/` so the files land in `backend/data/`.
+- **Ingest cannot find the PDF**: check that `GPO-Anual-report.pdf` is at the repo root
+  and that you ran the command from `backend/` with `--source ../GPO-Anual-report.pdf`.
+- **Out of memory during ingest**: close other programs, or lower `CHUNK_SIZE`.
+- **Cohere rate-limit errors (429)**: set `RERANKER_ENABLED=false` for heavy local runs.
+- **Browser cannot reach the backend**: check that `NEXT_PUBLIC_API_BASE_URL` in
+  `frontend/.env.local` matches the backend address, and that `CORS_ORIGINS` in
+  `backend/.env` includes `http://localhost:3000`.
+- **Settings changes have no effect**: restart the server; settings are read at startup.

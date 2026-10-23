@@ -1,100 +1,175 @@
 # Architecture
 
-A deeper look at why the pieces are arranged the way they are.
+**Built by:** [Devansh Patel](https://portfolio-website-umber-ten-90.vercel.app/#)
 
-## Goals
+A retrieval-augmented chatbot grounded in the **U.S. Government Publishing Office (GPO)
+2018 Annual Report**. The system has two halves: an **ingestion** step that turns the
+report PDF into a searchable index, and a **query** path that searches that index and has
+an LLM write a grounded, cited answer.
 
-1. **Grounded** — answers must cite the docs, refuse off-topic, and not hallucinate.
-2. **Iterable** — every change (prompt, chunking, alpha, top-k) should be measurable.
-3. **Cheap** — sensible defaults that run on free tiers; nothing locks you in.
-
-## Request lifecycle
+## System overview
 
 ```
-POST /chat
+                    INGESTION (run once)
+  PDF ──► clean text ──► reading order ──► strip headers/footers
+                                              │
+                         ┌────────────────────┴───────────────────┐
+                         ▼                                        ▼
+                 financial tables                           narrative prose
+          validate → split rows → key-value records     overlapping windows
+                         └────────────────────┬───────────────────┘
+                                              ▼
+                              embed + index (page, units on every chunk)
+                                 ┌────────────┴────────────┐
+                                 ▼                         ▼
+                         ChromaDB (dense)          rank_bm25 (sparse)
+
+                    QUERY (every request)
+  question ──► hybrid retrieval ──► Cohere rerank ──► LLM ──► answer + sources
+```
+
+## Ingestion
+
+`scripts/ingest.py` runs the stages below and rebuilds the index each time.
+
+### 1. Read and clean (`pdf_loader.py`, `pdf_text.py`)
+
+PyMuPDF reads each page. The extracted text is normalised: garbled or mojibake
+characters are repaired, words hyphenated across line breaks are rejoined, letter-spaced
+headings such as `G O V E R N M E N T` are collapsed to `GOVERNMENT`, and odd whitespace
+is tidied.
+
+### 2. Reading order (`pdf_layout.py`)
+
+Text blocks on multi-column pages are reassembled in real reading order: the left column
+first, then the right. Full-width titles stay where they are, so sentences and headings
+read in sequence.
+
+### 3. Running headers and footers (`pdf_text.py`)
+
+The top and bottom lines of each page are compared across the document with digits
+masked, so `Page 12` and `Page 7` match. Lines that recur on at least
+`HEADER_FOOTER_MIN_RECURRENCE` pages are removed from the content. When a page's top line
+is a section title (for example `Section IV: ...`), that section is kept as context for
+the page.
+
+### 4. Financial tables (`pdf_tables.py`)
+
+- **Validate.** Detected grids are checked so that page layouts such as org charts are
+  not treated as data tables.
+- **Split.** Cells that stack several labels or values separated by newlines are split
+  back into individual rows.
+- **Flatten.** Each row becomes a self-contained key-value record, for example
+  `U.S. Department of State | 2018: $270,596 | 2017: $310,971`. The record carries the
+  table's descriptor, its units (such as "Dollars in thousands"), and its page, so a
+  number always travels with what it means.
+
+### 5. Prose (`pdf_chunker.py`, `chunker.py`)
+
+Narrative text is split into overlapping windows (`CHUNK_SIZE` characters,
+`CHUNK_OVERLAP` shared between neighbours). Breaks snap to paragraph boundaries when
+possible, and each window keeps its section and page.
+
+### 6. Indexing (`indexer.py`)
+
+Every chunk, prose and table row alike, is:
+
+- embedded (local MiniLM by default, or OpenAI embeddings) and stored in the ChromaDB
+  collection `gpo_report`;
+- added to a `rank_bm25` index built from the same text;
+- recorded in a metadata sidecar with its text, page, units, section, and chunk type.
+
+## Query path
+
+```
+POST /chat or /chat/stream
   └─ pipeline.run_pipeline(query, history)
-       ├─ retriever.retrieve(query)
-       │    ├─ dense:  embed(query) → Chroma top-15 (cosine)
-       │    ├─ sparse: tokenise → BM25 top-15
-       │    └─ fuse:   min-max normalise both lists, weighted sum (alpha)
-       ├─ reranker.rerank(query, top-30, k=5)
-       │    └─ Cohere rerank-english-v3.0  (or passthrough if disabled)
-       └─ generator.generate(query, top-5, history)
-            └─ Gemini / OpenAI with the system prompt in generator.py
+       ├─ HybridRetriever.retrieve(query)
+       ├─ Reranker.rerank(query, candidates, k)
+       └─ Generator.generate(query, top-k chunks, history)
 ```
 
-## Why hybrid retrieval
+### Hybrid retrieval (`rag/retriever.py`)
 
-Pure-vector search drops on rare tokens (method names, error codes, version strings).
-Pure-BM25 drops on paraphrase ("query string params" vs `req.query`). Real user
-queries land on both sides of that line, so we fuse:
+Dense and sparse search cover each other's weak spots: embeddings match paraphrases,
+while BM25 matches exact terms such as program names and line-item labels.
 
-- **Dense**: `all-MiniLM-L6-v2` (384-d, 80MB, runs on CPU in ~10ms per query)
-- **Sparse**: `rank_bm25` (Okapi BM25, in-process, pickled to disk)
-- **Fusion**: min-max normalise each list to `[0, 1]`, then `score = α·dense + (1-α)·sparse`
+1. **Dense:** embed the query, take the top `TOP_K_DENSE` chunks from Chroma by cosine
+   similarity.
+2. **Sparse:** tokenise the query, take the top `TOP_K_BM25` chunks from BM25.
+3. **Fuse:** min-max normalise each score list to [0, 1], then combine them as
+   `alpha * dense + (1 - alpha) * sparse`. `HYBRID_ALPHA` is the single blend knob:
+   `1.0` is pure dense, `0.0` is pure BM25, `0.5` is the default.
 
-`α` is exposed as a setting (`HYBRID_ALPHA`) so we can A/B on the same eval set
-without redeploys. Default `0.5` was the best on our eval. Reciprocal Rank Fusion
-(RRF) is the other standard choice; weighted-sum gives us a more interpretable knob.
+Fused candidates are looked up in the metadata sidecar to recover their full text, page,
+units, and chunk type.
 
-## Why a reranker
+### Rerank (`rag/reranker.py`)
 
-The hybrid retriever maximises **recall** — it casts a wide net of 30 candidates.
-Most of those are weakly relevant. A cross-encoder reranker scores `(query, chunk)`
-pairs *together* (bi-encoders embed them separately, which loses interaction signal)
-and pushes the truly best 5 to the top. The LLM only sees those 5.
+Retrieval casts a wide net; the reranker picks the best of it. The Cohere cross-encoder
+scores each candidate against the query and the top `TOP_K_RERANK` chunks go forward to
+the LLM. With `RERANKER_ENABLED=false`, the top chunks in fused order are used instead.
 
-Empirically on the eval set: context_precision rose from ~0.42 (no reranker) to
-~0.71 (Cohere). It's the single highest-leverage component.
+### Generate (`rag/generator.py`)
 
-Cohere is just the simplest hosted option. A local cross-encoder
-(`BAAI/bge-reranker-base`, ~280MB) would work identically — the abstraction in
-`app/rag/reranker.py` makes the swap a one-file change.
+One generator interface has Gemini (default) and OpenAI implementations, chosen with
+`LLM_PROVIDER`. The same prompt is used for both, so eval results compare across
+providers. The prompt tells the model to answer using only the supplied chunks, to state
+the units and page for every number, and to cite inline. Recent conversation history is
+passed along for follow-up questions.
 
-## Chunking strategy
+### Transport (`routers/chat.py`)
 
-Docs are not arbitrary prose — they have a heading hierarchy that's semantically
-meaningful. The chunker:
+- `POST /chat` returns `{ answer, sources, latency_ms }` as JSON.
+- `POST /chat/stream` returns Server-Sent Events: `token` events carrying answer
+  fragments, then a `final` event with the answer, sources, and latency (`error` if
+  something fails).
 
-1. Strips YAML frontmatter (Express docs use Jekyll).
-2. Slides a 700-char window with 120-char overlap.
-3. Snaps the right edge to the nearest paragraph break (`\n\n`) within 200 chars
-   to avoid cutting mid-sentence.
-4. Carries the nearest H1/H2/H3 breadcrumb into each chunk's metadata
-   (`section: "Guide > Routing > Route paths"`), which the prompt surfaces to
-   the LLM as part of each context block.
+Each source carries its chunk id, title, a short snippet, its fused or rerank score,
+page, units, and chunk type, which the UI shows in its sources panel.
 
-The numbers are tuned to Express's average paragraph length. A different corpus
-would want different numbers — the eval harness tells you when to retune.
+## Data on disk (`backend/data/`)
 
-## Why two separate indices on disk
+Three files must exist before the server can handle requests:
 
-Chroma persists vectors and their metadata; BM25 needs the raw token lists.
-Keeping the BM25 index in a separate pickle file lets us rebuild either side
-independently and keeps the Chroma collection clean.
+| Path | Contents |
+| --- | --- |
+| `chroma/` | Chroma persistent vector store (collection `gpo_report`) |
+| `bm25.pkl` | BM25 index pickle (`{bm25, ids}`) |
+| `docs_meta.json` | chunk id → full chunk record, used during fusion |
 
-`docs_meta.json` is a sidecar lookup — chunk_id → full chunk record — so the
-fusion stage doesn't need a round-trip to Chroma for metadata it already had
-at ingest time.
+The retriever, reranker, generator, and embedder are cached singletons loaded on the
+first request. An idle manager clears them after a quiet period to free memory; they
+reload on the next request.
 
-## LLM abstraction
+## Evaluation
 
-`app/rag/generator.py` has one `Generator` protocol with two implementations.
-Provider is chosen at startup via env var. This isn't over-engineering — it
-lets us:
+`eval/run_eval.py` runs the live pipeline over a verified gold Q&A set
+(`eval/dataset.json`) and reports:
 
-- Run eval against multiple providers without code edits.
-- Use the cheap provider for dev and the strong one for prod.
-- Fall back when one provider is rate-limiting.
+- **Ragas** metrics: faithfulness, answer relevancy, context precision, context recall.
+- **Page-based retrieval hit-rate:** whether the retrieved chunks include a reference
+  page for the question.
 
-The same prompt goes through both paths so the eval reflects production.
+GitHub Actions runs `python -m eval.run_eval --check-thresholds` and fails the build if
+any Ragas metric falls below its floor (faithfulness 0.70, answer relevancy 0.70,
+context precision 0.55, context recall 0.55). Reports are written to
+`backend/eval/reports/`.
 
-## What's deliberately out of scope
+## Design choices
 
-- **Streaming responses**: would muddy the source-attribution payload. Skipped for now.
-- **User auth / multi-tenant**: this is a single-corpus public demo.
-- **Query rewriting / HyDE**: would help on ambiguous follow-ups but adds an
-  LLM call per turn. Worth measuring before adding.
-- **Embedding cache**: corpus is small enough that startup is fast; not needed yet.
-- **Observability stack**: latency is captured per request; a real prod build
-  would wire OpenTelemetry → Grafana.
+- **One record per table row.** A number is only useful with its row label, column year,
+  units, and page, so each row is stored as one self-contained chunk.
+- **Hybrid search.** Financial line items and program names reward exact-term matching,
+  while narrative questions reward semantic matching; blending both with one knob keeps
+  tuning simple.
+- **Retrieve wide, rerank narrow.** Hybrid search favours recall and the cross-encoder
+  favours precision, so the LLM sees a small, relevant context.
+- **Swappable providers.** LLM and embedding backends are chosen by environment variable
+  behind one interface each; the same prompt keeps results comparable.
+- **Cited answers.** Every source carries page and units, so each number in an answer can
+  be traced back to the report.
+
+## License
+
+MIT
