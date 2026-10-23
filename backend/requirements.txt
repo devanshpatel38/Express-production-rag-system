@@ -19,10 +19,12 @@ google-generativeai==0.8.3
 cohere==5.11.4
 
 # Ingestion / parsing
-markdown-it-py==3.0.0
-beautifulsoup4==4.12.3
+pymupdf==1.28.2
 
 # Eval
 ragas==0.2.6
 datasets==3.0.2
 pandas==2.2.3
+
+# Tests
+pytest==8.3.3
