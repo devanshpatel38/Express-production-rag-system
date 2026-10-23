@@ -19,6 +19,12 @@ function XIcon() {
   );
 }
 
+const TYPE_LABEL: Record<string, string> = {
+  table_row: "table",
+  figure: "figure",
+  prose: "text",
+};
+
 export function SourcesPanel({ open, onClose, sources, question, latency_ms, reranked }: Props) {
   return (
     <>
@@ -63,7 +69,12 @@ export function SourcesPanel({ open, onClose, sources, question, latency_ms, rer
               <div className="source-head">
                 <div className="source-rank-row">
                   <span className={`source-rank rk-${Math.min(i + 1, 5)}`}>{i + 1}</span>
-                  <span className="source-path">{s.source_path}</span>
+                  <span className="source-path">
+                    {s.page != null ? `page ${s.page}` : s.source_path}
+                    {s.chunk_type && s.chunk_type !== "prose" && (
+                      <span className="source-type">{TYPE_LABEL[s.chunk_type] ?? s.chunk_type}</span>
+                    )}
+                  </span>
                 </div>
                 <div className="source-score">
                   <span className="num">{s.score.toFixed(2)}</span>
@@ -74,6 +85,7 @@ export function SourcesPanel({ open, onClose, sources, question, latency_ms, rer
                 {s.title && <strong>{s.title} — </strong>}
                 {s.snippet}
               </div>
+              {s.units && <div className="source-units">units: {s.units}</div>}
             </div>
           ))}
         </div>

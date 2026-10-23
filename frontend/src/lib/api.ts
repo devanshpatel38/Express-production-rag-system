@@ -1,8 +1,9 @@
 // Small typed wrapper around the backend. Keeping this isolated means swapping
 // transports (REST <-> SSE) only touches one file.
 //
-// All calls go through the Next.js rewrite proxy at /api/* (see next.config.js)
-// so the browser never crosses origins — no CORS dependency on the backend.
+// /chat goes through the Next.js rewrite proxy at /api/*; /chat/stream goes
+// through a Route Handler (app/api/chat/stream/route.ts) because rewrites buffer
+// text/event-stream. Either way the browser stays same-origin — no CORS.
 
 export type Role = "user" | "assistant";
 
@@ -17,39 +18,16 @@ export interface Source {
   title: string;
   snippet: string;
   score: number;
-}
-
-// Mirrors backend HealingEvent (app/models/schemas.py).
-export type HealingStage =
-  | "routing"
-  | "cache_hit"
-  | "hyde"
-  | "retrieval"
-  | "grading"
-  | "rerank"
-  | "rewrite"
-  | "generation"
-  | "faithfulness"
-  | "retry"
-  | "give_up"
-  | "done";
-
-export interface HealingEvent {
-  stage: HealingStage;
-  attempt: number;
-  message: string;
-  score?: number | null;
-  detail?: Record<string, unknown> | null;
+  // PDF-pipeline metadata (app/models/schemas.py Source).
+  page: number | null;
+  units: string | null;
+  chunk_type: string; // "prose" | "table_row" | "figure"
 }
 
 export interface ChatResponse {
   answer: string;
   sources: Source[];
   latency_ms: number;
-  trace: HealingEvent[];
-  from_cache: boolean;
-  fallback: boolean;
-  attempts: number;
 }
 
 export interface HealthResponse {
@@ -57,15 +35,13 @@ export interface HealthResponse {
   indexed_chunks: number;
   llm_provider: string;
   reranker_enabled: boolean;
-  self_healing_enabled: boolean;
 }
 
 const API_BASE = "/api";
 
 interface ChatOpts {
   useReranker?: boolean;
-  useSelfHealing?: boolean;
-  useHyde?: boolean;
+  topK?: number;
 }
 
 export async function chat(
@@ -80,8 +56,7 @@ export async function chat(
       query,
       history,
       use_reranker: opts?.useReranker,
-      use_self_healing: opts?.useSelfHealing,
-      use_hyde: opts?.useHyde,
+      top_k: opts?.topK,
     }),
   });
   if (!resp.ok) {
@@ -94,11 +69,10 @@ export async function chat(
 // --- Streaming ---
 // The backend emits Server-Sent Events on /chat/stream. We can't use the native
 // EventSource API because it only supports GET. Instead we POST and parse the
-// stream by hand. The callbacks fire as events arrive; the returned promise
-// resolves with the final ChatResponse-shaped payload.
+// stream by hand. onToken fires as answer fragments arrive; the returned promise
+// resolves with the final ChatResponse-shaped payload (answer + sources).
 
 export interface StreamCallbacks {
-  onEvent?: (event: HealingEvent) => void;
   onToken?: (text: string) => void;
   onError?: (message: string) => void;
 }
@@ -116,7 +90,7 @@ export async function chatStream(
       query,
       history,
       use_reranker: opts?.useReranker,
-      use_hyde: opts?.useHyde,
+      top_k: opts?.topK,
     }),
   });
   if (!resp.ok || !resp.body) {
@@ -130,7 +104,8 @@ export async function chatStream(
   let final: ChatResponse | null = null;
 
   // SSE format: `event: <type>\ndata: <json>\n\n`. We accumulate until we hit
-  // a blank line, then parse one event at a time.
+  // a blank line, then parse one event at a time. The backend emits only
+  // `token`, `final`, and `error` events (no healing trace in this pipeline).
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -155,8 +130,7 @@ export async function chatStream(
         continue;
       }
 
-      if (evType === "event") callbacks.onEvent?.(payload as HealingEvent);
-      else if (evType === "token") callbacks.onToken?.(payload.text);
+      if (evType === "token") callbacks.onToken?.(payload.text);
       else if (evType === "final") final = payload as ChatResponse;
       else if (evType === "error") {
         const msg = payload.message ?? "stream error";

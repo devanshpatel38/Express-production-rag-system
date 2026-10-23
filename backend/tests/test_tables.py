@@ -114,3 +114,19 @@ def test_interior_gap_value_kept_trailing_dropped():
     td = _table_rows(raw, 1, "", (0, 0, 1, 1))
     assert td.rows == [("A", {"2018": "1", "col2": "2", "2016": "3"})]
     assert set(td.rows[0][1]) == set(td.columns)
+
+
+def test_title_above_rejects_long_paragraph():
+    # A short caption block directly above the table is used as the title.
+    from app.ingestion.pdf_tables import _title_above
+    from app.ingestion.pdf_layout import Block
+    bbox = (50, 200, 300, 400)
+    caption = Block(50, 185, 200, 198, "Operating Expenses")
+    assert _title_above(bbox, [caption]) == "Operating Expenses"
+    # A long prose paragraph above the table must NOT become the title.
+    para = Block(
+        50, 150, 540, 198,
+        "As an employer, GPO matches employee contributions to the U.S. Social "
+        "Security Administration under the Federal Employees Retirement System.",
+    )
+    assert _title_above(bbox, [para]) == ""

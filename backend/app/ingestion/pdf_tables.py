@@ -86,7 +86,16 @@ def _title_above(bbox, blocks: list[Block]) -> str:
         if b.y1 <= bbox[1] + 1 and t and not _UNITS.match(t) and not t.isdigit():
             if best is None or b.y1 > best.y1:
                 best = b
-    return " ".join(best.text.split()) if best else ""
+    if best is None:
+        return ""
+    text = " ".join(best.text.split())
+    # A table caption is a short heading, not a prose paragraph. When the nearest
+    # block above the table is long, it's body text (e.g. a narrative paragraph),
+    # not a title -> leave the title empty rather than mislabel the table, which
+    # would also pollute the chunk and hurt retrieval of its rows.
+    if len(text) > 80:
+        return ""
+    return text
 
 
 def _dedupe_columns(items: list[tuple[int, str]]) -> dict[int, str]:
@@ -103,6 +112,7 @@ def _table_rows(raw: list[list], page_no: int, title: str, bbox) -> TableData | 
     units = ""
     columns: dict[int, str] = {}
     pending_labels = ""
+    subhead = ""
     out: list[tuple[str, dict[str, str]]] = []
     for r in raw:
         cells = [_clean(c) for c in r]
@@ -121,7 +131,12 @@ def _table_rows(raw: list[list], page_no: int, title: str, bbox) -> TableData | 
                 pending_labels = label  # labels share the header row (packed stack)
             continue
         if non_empty and not any(_DIGIT.search(v) for _, v in non_empty):
-            continue  # sub-header such as "Billings % of Total"
+            # A non-numeric row under the year header describes the columns
+            # (e.g. "Billings % of Total"). Keep it as the table descriptor so
+            # the chunk carries that wording and the rows stay retrievable.
+            if not subhead:
+                subhead = " ".join(dict.fromkeys(v for _, v in non_empty))
+            continue
         if not non_empty:
             if label:
                 pending_labels = label
@@ -146,7 +161,7 @@ def _table_rows(raw: list[list], page_no: int, title: str, bbox) -> TableData | 
     used_columns = [c for c in ordered if c in seen] + sorted(seen - set(ordered))
     return TableData(
         page=page_no,
-        title=title,
+        title=title or subhead,
         units=units,
         columns=used_columns,
         rows=out,
