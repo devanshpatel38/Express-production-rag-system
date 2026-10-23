@@ -82,3 +82,50 @@ def normalize_text(s: str) -> str:
     s = re.sub(r" ?\n ?", "\n", s)
     s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
+
+
+# ---------------------------------------------------------------------------
+# Running headers / footers and section breadcrumbs
+# ---------------------------------------------------------------------------
+
+_SECTION_RE = re.compile(r"^Section\s+(?:[IVXLCDM]+|\d+)\s*:\s*\S.*$")
+
+
+def _template(line: str) -> str:
+    """Digit-masked form of a line: every digit becomes '#', so 'Page 12' == 'Page 7'."""
+    return re.sub(r"\d", "#", line.strip())
+
+
+def collect_repeating_lines(
+    pages_top_bottom: list[tuple[str, str]], min_recurrence: int
+) -> set[str]:
+    """Return digit-masked templates of top/bottom lines recurring >= min_recurrence times.
+
+    Numeric-only templates (no alphabetic character, e.g. page numbers or years) are
+    excluded so that they are never stripped from body text.
+    """
+    counts: dict[str, int] = {}
+    for top, bottom in pages_top_bottom:
+        for line in (top, bottom):
+            t = _template(line)
+            if t:
+                counts[t] = counts.get(t, 0) + 1
+    return {
+        t
+        for t, n in counts.items()
+        if n >= min_recurrence and any(c.isalpha() for c in t)
+    }
+
+
+def strip_repeating(text: str, repeating: set[str]) -> str:
+    """Drop every line whose digit-masked form is in `repeating`; keep all other lines."""
+    if not repeating:
+        return text
+    kept = [ln for ln in text.split("\n") if _template(ln) not in repeating]
+    return "\n".join(kept)
+
+
+def section_for(top_line: str) -> str | None:
+    """Return the line if it is a GPO section title ('Section IV: ...'), else None."""
+    line = top_line.strip()
+    return line if _SECTION_RE.match(line) else None
