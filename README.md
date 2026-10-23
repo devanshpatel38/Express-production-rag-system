@@ -1,104 +1,91 @@
-# Express Docs RAG
+# Global Economic Prospects RAG
 
 **Built by:** [Devansh Patel](https://portfolio-website-umber-ten-90.vercel.app/#)
 
-### ▶ [Try the live demo →](https://frontend-liart-xi-96.vercel.app/)
+A retrieval-augmented chatbot grounded in the World Bank's **Global Economic Prospects**
+report. Ask it a question and it answers from the report itself — pulling exact figures
+straight out of the data tables ("what's the 2026 GDP growth forecast for Sub-Saharan
+Africa?") as well as the narrative ("what are the main risks to the global outlook?").
+Every answer cites the page it came from and the units the figure is in.
 
-> The backend sleeps when idle (free-tier hosting, plus the app offloads its models
-> after inactivity to save RAM). **The first question can take 30–60s while it wakes up
-> and reloads the index** — after that it's fast. Ask something like
-> *"how do I handle errors in Express middleware?"* and expand the trace panel to watch
-> the self-healing loop grade, rewrite, and verify its own answer.
-
-A retrieval-augmented chatbot grounded in the official Express.js documentation.
-Built to demonstrate a production-shaped, **self-healing** RAG pipeline end-to-end,
-not a notebook demo — the system inspects its own retrieval and answers, corrects
-itself when they're weak, and streams every step it takes to the UI.
-
-
-## What's inside
-
-- **Self-healing (Corrective) RAG loop** — instead of a blind `retrieve → generate`, the pipeline grades what it retrieves, rewrites the query and retries when retrieval is weak, verifies the answer is grounded, and falls back gracefully when it can't be confident. All stages are independently toggleable and bounded by a retry budget.
-- **Adaptive routing** — off-topic questions are classified and short-circuited before they ever hit retrieval, so they don't burn the retrieval/LLM budget.
-- **LLM chunk grading (CRAG)** — every retrieved chunk is scored for relevance; low-scoring "looks-related-but-useless" chunks are dropped before generation.
-- **Query rewriting + HyDE** — vague or failed queries are rephrased toward documentation vocabulary; optional Hypothetical Document Embeddings embed an imagined answer for better dense recall.
-- **Faithfulness check** — a post-generation pass scores how well the answer is supported by the retrieved context; low scores trigger a rewrite-and-retry.
-- **SSE streaming** — the healing trace and the answer stream live to the browser over Server-Sent Events; the UI shows each pipeline step as it happens.
-- **Semantic cache** — paraphrase-aware in-memory cache (cosine ≥ 0.95) short-circuits repeated/similar questions.
-- **Hybrid retrieval** — dense embeddings (Chroma) fused with BM25, single `alpha` knob to control the blend.
-- **Cross-encoder reranking** — Cohere Rerank narrows the top-k that actually reaches the LLM.
-- **Eval harness** — Ragas (faithfulness, answer relevancy, context precision/recall) over a hand-curated Q&A set.
-- **GitHub Actions** — eval runs on every PR and fails the build if scores drop below configured thresholds.
-- **Multi-provider LLM** — Gemini and OpenAI behind one interface; provider chosen by env var.
-- **Sourced answers + transparent trace** — every response carries inline citations, an expandable sources panel, and a collapsible self-healing trace showing exactly how the answer was reached.
-
-Self-healing is a master switch (`SELF_HEALING_ENABLED`); turn it off and the
-pipeline falls back to the classic `retrieve → rerank → generate` path, which the
-eval harness uses to A/B the two modes.
-
-## Architecture at a glance
+## How it works
 
 ```
-  query
-    │
-    ▼
- ┌──────────────┐  off-topic ─▶ polite redirect (no retrieval, no LLM bill)
- │ 1. Router    │  ambiguous ─▶ force HyDE on
- └──────┬───────┘
-        ▼
- ┌──────────────┐  cache hit (cosine ≥ 0.95) ─▶ return cached answer
- │ 2. Cache     │
- └──────┬───────┘
-        ▼   ┌───── self-healing loop · bounded by MAX_HEALING_ATTEMPTS ──────┐
-            │ 3. HyDE (optional)  embed a hypothetical answer                 │
-            │ 4. Hybrid retrieve  dense (Chroma+MiniLM) + BM25, min-max fused │
-            │ 5. Rerank           Cohere rerank-english-v3.0 → top-k          │
-            │ 6. Grade            LLM scores each chunk; weak ones dropped     │
-            │      └─ too few kept ──▶ rewrite query, retry ↺                 │
-            │ 7. Generate         Gemini / OpenAI, from surviving chunks      │
-            │ 8. Verify           faithfulness score                          │
-            │      └─ below threshold ──▶ rewrite query, retry ↺             │
-            └─────────────────────────────────────────────────────────────────┘
-                       │ answer + sources + healing trace   (cached for next time)
-                       ▼
-            streamed to the UI over SSE, step by step
+  question
+     │
+     ▼
+  hybrid search         dense embeddings (Chroma) + BM25 keyword search, blended
+     │
+     ▼
+  rerank                Cohere cross-encoder picks the few best-matching chunks
+     │
+     ▼
+  generate              the LLM answers using only those chunks, citing page + units
+     │
+     ▼
+  answer + sources      streamed to the UI, with a sources panel (page, units, score)
 ```
 
-Every stage appends a `HealingEvent`; the `/chat/stream` endpoint emits those
-events live, then streams the answer, then a final payload with sources and the
-full trace. More detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+The report is turned into a searchable index ahead of time (the **ingestion** step
+below). At question time the system searches that index, reranks the matches down to
+the most relevant handful, and the LLM writes a grounded answer from them — quoting
+figures exactly and naming their page and units.
+
+## Ingestion strategy
+
+A 200-page economic report is mostly prose, but the valuable numbers live in dense
+data tables and figures. The ingestion pipeline reads the PDF and prepares each kind
+of content so it can be retrieved cleanly:
+
+1. **Read the PDF and clean the text.** Repair the garbled characters that PDF
+   extraction produces, rejoin words broken across line endings, and collapse the odd
+   letter- and word-spacing so the text reads normally.
+2. **Follow the real reading order.** Many pages are two-column; the text is reassembled
+   left column then right column so sentences stay in order, with full-width titles
+   kept in place.
+3. **Drop the running headers and footers.** The chapter banner and page number that
+   repeat on every page are detected and removed so they don't pollute the content,
+   while the section each page belongs to is kept as context.
+4. **Turn tables into per-row records.** Each data table is detected, validated (so page
+   layouts like org charts aren't mistaken for data), and every row is flattened into a
+   self-contained `Region | 2025e: 4.1 | 2026f: 4.0 | …` record. Each record carries the
+   table's title, its **units** (e.g. "percent, annual"), and its **page**, so a single
+   figure is never separated from what it means.
+5. **Describe the figures.** Charts and figures are read for the values printed on them,
+   captured as short descriptions tied to their page.
+6. **Chunk the prose.** The narrative text is split into overlapping windows that keep
+   their section and page, so explanations aren't cut mid-thought.
+
+Everything — prose, table rows, and figures — is embedded into the vector store and a
+BM25 index, each piece tagged with its page and units for precise, citable retrieval.
 
 ## Tech stack
 
-| Layer | Choice | Why |
-| --- | --- | --- |
-| Backend | FastAPI (Python 3.11) | Async, typed, clean OpenAPI |
-| Vector store | ChromaDB (persistent) | Embedded, no extra service |
-| Sparse retrieval | rank_bm25 | Pure-Python, no Lucene/ES |
-| Embeddings | sentence-transformers (default), OpenAI (optional) | Free dev, scalable swap |
-| Reranker | Cohere Rerank v3 | Best quality/effort ratio |
-| LLM | Gemini 1.5 Flash (default), GPT-4o-mini | Cheap, fast, swappable |
-| Self-healing | Router + grader + rewriter + verifier (same LLM) | Corrective RAG without extra infra |
-| Cache | In-memory semantic cache | Paraphrase-aware, zero external deps |
-| Transport | REST `/chat` + SSE `/chat/stream` | Live healing trace + token streaming |
-| Eval | Ragas + custom retrieval hit-rate | Standard metrics + sanity |
-| Frontend | Next.js 14 (App Router) | Landing + chat, type-safe, SSE client |
-| CI | GitHub Actions | Eval on PR, typecheck, build |
+| Layer | Choice |
+| --- | --- |
+| Backend | FastAPI (Python 3.11) |
+| PDF parsing | PyMuPDF |
+| Vector store | ChromaDB (persistent) |
+| Sparse retrieval | rank_bm25 |
+| Embeddings | sentence-transformers (default), OpenAI (optional) |
+| Reranker | Cohere Rerank |
+| LLM | Gemini (default) / OpenAI, one interface, chosen by env var |
+| Transport | REST `/chat` + SSE `/chat/stream` (token + source streaming) |
+| Eval | Ragas (faithfulness, answer relevancy, context precision/recall) |
+| Frontend | Next.js 14 (App Router) |
+| CI | GitHub Actions |
 
 ## Quickstart
-
-See [`docs/SETUP.md`](docs/SETUP.md) for a step-by-step. The short version:
 
 ```bash
 # 1. Backend
 cd backend
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env  # fill in your keys
+cp .env.example .env            # fill in your API keys
 
-# 2. Get the Express docs and build the index
-git clone --depth 1 https://github.com/expressjs/expressjs.com.git ../external/expressjs.com
-python -m scripts.ingest --source ../external/expressjs.com/en
+# 2. Put the report PDF at the repo root as GEP-Jun-2026.pdf, then build the index
+python -m scripts.ingest --source ../GEP-Jun-2026.pdf
 
 # 3. Serve
 uvicorn app.main:app --reload --port 8000
@@ -116,18 +103,12 @@ Open http://localhost:3000.
 
 ```bash
 cd backend
-python -m eval.run_eval                  # full run + report
-python -m eval.run_eval --check-thresholds  # CI mode (non-zero on regression)
+python -m eval.run_eval                     # full run + report
+python -m eval.run_eval --check-thresholds  # CI mode (non-zero exit on regression)
 ```
 
-Reports land in `backend/eval/reports/`. See [`docs/EVAL.md`](docs/EVAL.md) for what each metric means and how thresholds are set.
-
-## Deployment
-
-Live instance: **https://frontend-liart-xi-96.vercel.app/**
-
-- **Backend** → Render (Docker). See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
-- **Frontend** → Vercel (Next.js). Set `NEXT_PUBLIC_API_BASE_URL` to the Render URL.
+Reports land in `backend/eval/reports/`. Scores are checked against thresholds on every
+pull request via GitHub Actions.
 
 ## License
 
