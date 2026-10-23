@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
-      pull-requests: write   # ← add this
+      pull-requests: write   
       contents: read
 
     steps:
@@ -32,22 +32,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # The Express docs repo is small (~7MB) so we clone it fresh per run.
-      # This keeps the eval against current docs and avoids committing them.
-      - name: Clone Express docs
-        run: |
-          if [ -d "external/expressjs.com/en" ]; then
-            echo "Express docs already present in repo — skipping clone."
-          else
-            echo "Cloning fresh..."
-            git clone --depth 1 https://github.com/expressjs/expressjs.com.git external/expressjs.com
-          fi
-
+      # The GPO 2018 Annual Report PDF must be present at the repo root (currently untracked; commit it or add a download step for CI).
       - name: Build index
         working-directory: backend
         env:
           EMBEDDING_BACKEND: local
-        run: python -m scripts.ingest --source ../external/expressjs.com/en
+        run: python -m scripts.ingest --source ../GPO-Anual-report.pdf
 
       - name: Run eval
         working-directory: backend

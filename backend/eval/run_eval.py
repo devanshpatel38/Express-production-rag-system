@@ -53,8 +53,8 @@ def _run_pipeline_collect(items: list[dict]) -> list[dict]:
                 "ground_truth": it["ground_truth"],
                 "_id": it["id"],
                 "_latency_ms": result.latency_ms,
-                "_retrieved_paths": [c.source_path for c in result.post_rerank],
-                "_reference_sources": it.get("reference_sources", []),
+                "_retrieved_pages": [c.page for c in result.post_rerank if c.page is not None],
+                "_reference_pages": it.get("reference_pages", []),
             }
         )
         time.sleep(20)
@@ -114,14 +114,14 @@ def _score_with_ragas(rows: list[dict]) -> dict:
 
 
 def _retrieval_hit_rate(rows: list[dict]) -> float:
-    """A simple sanity metric: does the retrieved set intersect any reference source?"""
-    relevant = [r for r in rows if r["_reference_sources"]]
+    """A simple sanity metric: does the retrieved set intersect any reference page (1-based)?"""
+    relevant = [r for r in rows if r["_reference_pages"]]
     if not relevant:
         return 1.0
     hits = 0
     for r in relevant:
-        refs = set(r["_reference_sources"])
-        got = set(r["_retrieved_paths"])
+        refs = set(r["_reference_pages"])
+        got = set(r["_retrieved_pages"])
         if refs & got:
             hits += 1
     return hits / len(relevant)
@@ -133,7 +133,7 @@ def _print_report(aggregate: dict, hit_rate: float, latency_p50: int) -> None:
     print(f"Latency p50: {latency_p50} ms")
     for k, v in aggregate.items():
         floor = THRESHOLDS.get(k)
-        flag = "" if floor is None or v >= floor else "  ⚠ BELOW THRESHOLD"
+        flag = "" if floor is None or v >= floor else "  !! BELOW THRESHOLD"
         print(f"  {k:20s} {v:.3f}{flag}")
 
 
@@ -175,9 +175,10 @@ def main() -> int:
                 "rows": scored["rows"],
             },
             indent=2,
-        )
+        ),
+        encoding="utf-8",
     )
-    print(f"\nReport saved → {out_path}")
+    print(f"\nReport saved -> {out_path}")
 
     if args.check_thresholds:
         failures = [k for k, v in aggregate.items() if v < THRESHOLDS[k]]

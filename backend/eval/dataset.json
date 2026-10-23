@@ -1,84 +1,96 @@
 {
-  "dataset_version": "1.0",
-  "description": "Hand-curated eval set for Express.js docs RAG. Each item has a question and a ground-truth answer plus reference source paths. Ground-truth answers are intentionally short - we score on whether the model captures the key fact, not exact wording.",
+  "dataset_version": "2.0",
+  "description": "Hand-curated eval set for the U.S. GPO 2018 Annual Report (GPO-Anual-report.pdf). Financial-figure items were verified against the document's own tables; narrative items against the MD&A and letter text. reference_pages are 1-based PDF page indices (not the printed folios). All dollar figures are in thousands unless stated.",
   "items": [
     {
-      "id": "routing-basic",
-      "question": "How do I define a GET route in Express?",
-      "ground_truth": "Use app.get(path, handler), where path is a string or pattern and handler is a function taking req and res. Example: app.get('/', (req, res) => res.send('hello')).",
-      "reference_sources": ["en/starter/basic-routing.md", "en/guide/routing.md"]
+      "id": "fin-total-assets",
+      "question": "What were GPO's total assets at September 30, 2018, and how did that compare with 2017?",
+      "ground_truth": "Total assets were $1,018,063 thousand (about $1 billion) at September 30, 2018, compared with $945,623 thousand at September 30, 2017.",
+      "reference_pages": [58, 27]
     },
     {
-      "id": "middleware-order",
-      "question": "Does the order in which middleware is defined matter?",
-      "ground_truth": "Yes. Middleware functions execute in the order they are defined via app.use or the routing methods. Earlier middleware can short-circuit later ones by not calling next().",
-      "reference_sources": ["en/guide/using-middleware.md", "en/guide/writing-middleware.md"]
+      "id": "fin-net-income",
+      "question": "What was GPO's net income in fiscal 2018 versus fiscal 2017?",
+      "ground_truth": "Net income was $52,624 thousand in FY 2018 versus $58,876 thousand in FY 2017.",
+      "reference_pages": [59, 26]
     },
     {
-      "id": "error-middleware-signature",
-      "question": "What is the signature of an Express error-handling middleware?",
-      "ground_truth": "Error-handling middleware takes four arguments: (err, req, res, next). The four-argument signature is what Express uses to identify it as an error handler.",
-      "reference_sources": ["en/guide/error-handling.md"]
+      "id": "fin-total-revenue",
+      "question": "What were GPO's total operating revenues in 2018 and 2017?",
+      "ground_truth": "Total operating revenues were $874,466 thousand in 2018 and $874,297 thousand in 2017.",
+      "reference_pages": [59]
     },
     {
-      "id": "req-query-vs-params",
-      "question": "What is the difference between req.query and req.params?",
-      "ground_truth": "req.params holds route parameters parsed from the URL path (e.g. /users/:id), while req.query holds the parsed query-string values (e.g. ?sort=asc).",
-      "reference_sources": ["en/4x/api.md", "en/guide/routing.md"]
+      "id": "fin-printing-reproduction",
+      "question": "How much did GPO spend on printing and reproduction in 2018 compared with 2017?",
+      "ground_truth": "Printing and reproduction expenses were $341,474 thousand in 2018 and $307,447 thousand in 2017.",
+      "reference_pages": [59]
     },
     {
-      "id": "static-files",
-      "question": "How do I serve static files from a directory called public?",
-      "ground_truth": "Use the built-in middleware express.static: app.use(express.static('public')). You can also mount it at a virtual path: app.use('/static', express.static('public')).",
-      "reference_sources": ["en/starter/static-files.md"]
+      "id": "fin-retained-earnings",
+      "question": "What were GPO's retained earnings at the end of fiscal 2018 and fiscal 2017?",
+      "ground_truth": "Retained earnings were $441,889 thousand at the end of 2018 and $389,265 thousand at the end of 2017.",
+      "reference_pages": [58, 59]
     },
     {
-      "id": "json-body-parser",
-      "question": "How do I parse JSON request bodies in Express 4.16+?",
-      "ground_truth": "Use the built-in express.json() middleware: app.use(express.json()). The old body-parser package is no longer required for JSON.",
-      "reference_sources": ["en/4x/api.md"]
+      "id": "fin-deferred-revenues",
+      "question": "What were GPO's deferred revenues on the balance sheet for 2018 and 2017?",
+      "ground_truth": "Deferred revenues were $165,484 thousand in 2018 and $147,805 thousand in 2017.",
+      "reference_pages": [58, 27]
     },
     {
-      "id": "router-mounting",
-      "question": "How do I create a modular sub-router and mount it under a path prefix?",
-      "ground_truth": "Create a router with express.Router(), attach routes to it, then mount it on the app with app.use('/prefix', router). Each router is a mini application.",
-      "reference_sources": ["en/guide/routing.md", "en/4x/api.md"]
+      "id": "fin-operating-cash",
+      "question": "What was net cash provided by operating activities in 2018 and 2017?",
+      "ground_truth": "Net cash provided by operating activities was $90,030 thousand in 2018 and $68,063 thousand in 2017.",
+      "reference_pages": [60, 26]
     },
     {
-      "id": "next-error",
-      "question": "How do I pass an error to Express's error handler from a middleware?",
-      "ground_truth": "Call next(err) with any non-null argument. Express skips remaining non-error middleware and invokes the first error-handling middleware in the stack.",
-      "reference_sources": ["en/guide/error-handling.md"]
+      "id": "fin-customer-state",
+      "question": "How much did GPO bill the U.S. Department of State in 2018 and what share of total billings was that?",
+      "ground_truth": "GPO billed the U.S. Department of State $270,596 thousand in 2018, which was 33.3% of total billings (compared with $310,971 thousand, or 37.9%, in 2017).",
+      "reference_pages": [81]
     },
     {
-      "id": "production-best-practices",
-      "question": "What are some recommended things to do for an Express app in production?",
-      "ground_truth": "Set NODE_ENV=production, use a process manager (PM2, systemd) or run multiple instances behind a load balancer, gzip responses, don't use synchronous functions, log properly, and handle exceptions.",
-      "reference_sources": ["en/advanced/best-practice-performance.md"]
+      "id": "fin-customer-congress",
+      "question": "What were GPO's billings to the U.S. Congress in 2018, and what percentage of the total did they represent?",
+      "ground_truth": "Billings to the U.S. Congress were $78,283 thousand in 2018, or 9.6% of total billings (versus $73,699 thousand, or 9.0%, in 2017).",
+      "reference_pages": [81]
     },
     {
-      "id": "template-engine",
-      "question": "How do I configure a template engine like Pug in Express?",
-      "ground_truth": "Set the view engine and views directory via app.set('view engine', 'pug') and app.set('views', './views'). Then render templates with res.render('viewName', locals).",
-      "reference_sources": ["en/guide/using-template-engines.md"]
+      "id": "narr-net-income-adjusted",
+      "question": "Why does GPO report a net income of about $20.4 million for FY 2018 when net income was $52.6 million?",
+      "ground_truth": "GPO excludes two items: $28.7 million in funds reserved for passport-related capital investments (agreed with the Department of State) and a $3.5 million decrease in the long-term workers' compensation liability. After adjusting for these, net income was about $20.4 million, compared with $38.3 million in FY 2017.",
+      "reference_pages": [44, 26, 25]
     },
     {
-      "id": "cookie-parsing",
-      "question": "Does Express parse cookies out of the box?",
-      "ground_truth": "No - Express does not include a built-in cookie parser. Use the cookie-parser middleware (or your own) to populate req.cookies.",
-      "reference_sources": ["en/resources/middleware/cookie-parser.md", "en/4x/api.md"]
+      "id": "narr-audit-opinion",
+      "question": "What kind of audit opinion did GPO receive for FY 2018?",
+      "ground_truth": "GPO received an unmodified (clean) audit opinion on its FY 2018 finances, the 22nd consecutive year it has earned such a result.",
+      "reference_pages": [25]
     },
     {
-      "id": "trust-proxy",
-      "question": "What does setting 'trust proxy' do in Express?",
-      "ground_truth": "It tells Express to honour the X-Forwarded-* headers (For, Proto, Host) set by an upstream reverse proxy, so req.ip and req.protocol reflect the original client rather than the proxy.",
-      "reference_sources": ["en/guide/behind-proxies.md", "en/4x/api.md"]
+      "id": "narr-revolving-fund",
+      "question": "How are GPO's activities financed?",
+      "ground_truth": "All GPO activities are financed through its Business Operations Revolving Fund (established by section 309 of Title 44, U.S.C.), which is reimbursed by customer agency payments, sales to the public, and transfers from the Congressional Publishing and Public Information Programs appropriations.",
+      "reference_pages": [24, 36]
     },
     {
-      "id": "off-topic-control",
-      "question": "What is the best Italian restaurant in Ahmedabad?",
-      "ground_truth": "This question is unrelated to Express.js. The assistant should decline or redirect rather than hallucinate an answer.",
-      "reference_sources": []
+      "id": "narr-govinfo",
+      "question": "What was the significance of govinfo in FY 2018?",
+      "ground_truth": "FY 2018 saw the full-scale deployment of govinfo, GPO's public-facing repository of electronic public documents and successor to FDsys, with the goal of retiring FDsys in December 2018.",
+      "reference_pages": [4, 39]
+    },
+    {
+      "id": "narr-passport-volume",
+      "question": "How did passport production volume change between fiscal 2017 and fiscal 2018?",
+      "ground_truth": "Passport production volume decreased to 16.1 million passports in fiscal 2018 from 22.6 million in fiscal 2017.",
+      "reference_pages": [41]
+    },
+    {
+      "id": "narr-depository-libraries",
+      "question": "How many designated Federal depository libraries are in the FDLP?",
+      "ground_truth": "The Federal Depository Library Program includes 1,133 designated Federal depository libraries throughout the United States and its territories.",
+      "reference_pages": [39]
     }
   ]
 }
