@@ -43,6 +43,7 @@ def _body_size(spans: list[dict]) -> float:
 def _line_text(spans: list[dict]) -> str:
     body = _body_size(spans)
     out: list[str] = []
+    pending_space = False  # a dropped marker owned whitespace between neighbours
     for s in spans:
         text = s.get("text", "")
         if (
@@ -50,7 +51,14 @@ def _line_text(spans: list[dict]) -> str:
             and float(s["size"]) <= body * SUPERSCRIPT_SIZE_RATIO
             and not _CHEM_PREFIX_RE.search("".join(out).rstrip())
         ):
+            if text[:1].isspace() or text[-1:].isspace():
+                pending_space = True
             continue
+        if pending_space and out and text:
+            if not out[-1][-1:].isspace() and not text[0].isspace():
+                out.append(" ")
+        if text:
+            pending_space = False
         out.append(text)
     return "".join(out)
 

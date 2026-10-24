@@ -33,5 +33,11 @@ def test_superscripts_stripped(pages):
 
 
 def test_body_numbers_kept(pages):
-    assert "391 kg CO" in pages[0][9]
-    assert "391" in pages[0][9]
+    assert "391 kg CO2e" in pages[0][9]  # subscript 2 must survive
+    assert "346 kg CO2e" in pages[0][9]
+
+
+def test_no_glued_words_around_removed_marker(pages):
+    # p4: marker span "12 " sits between "third-party audits." and "By 2025"
+    assert "audits. By 2025" in pages[0][3]
+    assert "audits.By" not in pages[0][3]
