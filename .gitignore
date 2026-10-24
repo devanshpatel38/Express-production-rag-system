@@ -43,3 +43,9 @@ Thumbs.db
 
 # Design source (local only)
 express-production-rag/
+
+# Source PDFs (local only)
+*.pdf
+
+# Subagent-driven-development workspace (local only)
+.superpowers/
