@@ -7,11 +7,6 @@ is small, the union is what we want.
 Fusion scheme: min-max normalize each list to [0, 1], then weighted sum. RRF is
 the other popular choice; both work, weighted sum lets us expose a single
 `alpha` knob on the API which is great for the demo.
-
-HyDE support: `embed_text` lets the caller pass a different string for the dense
-leg (typically a HyDE-generated hypothetical answer) while keeping the original
-query for BM25. BM25 needs the user's actual tokens to find verbatim matches;
-HyDE only helps the semantic leg.
 """
 from __future__ import annotations
 
@@ -35,6 +30,10 @@ class Candidate:
     title: str
     section: str
     score: float  # fused score after normalization
+    page: int = 0  # 1-based PDF page, carried straight from the chunk
+    units: str = ""  # units travel with figures; "" for prose
+    chunk_type: str = "prose"  # "prose" | "table_row"
+    table_title: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -44,6 +43,10 @@ class Candidate:
             "title": self.title,
             "section": self.section,
             "score": self.score,
+            "page": self.page,
+            "units": self.units,
+            "chunk_type": self.chunk_type,
+            "table_title": self.table_title,
         }
 
 
@@ -80,8 +83,8 @@ class HybridRetriever:
     def n_chunks(self) -> int:
         return len(self._bm25_ids)
 
-    def _dense_search(self, embed_text: str, k: int) -> dict[str, float]:
-        vec = self._embedder.embed([embed_text])[0]
+    def _dense_search(self, query: str, k: int) -> dict[str, float]:
+        vec = self._embedder.embed([query])[0]
         res = self._collection.query(query_embeddings=[vec], n_results=k)
         ids = res["ids"][0]
         # Chroma returns cosine *distance* in [0, 2]; flip to similarity.
@@ -97,24 +100,16 @@ class HybridRetriever:
         ranked = sorted(enumerate(raw), key=lambda kv: kv[1], reverse=True)[:k]
         return {self._bm25_ids[i]: float(score) for i, score in ranked if score > 0}
 
-    def retrieve(
-        self,
-        query: str,
-        alpha: float | None = None,
-        embed_text: str | None = None,
-    ) -> list[Candidate]:
+    def retrieve(self, query: str, alpha: float | None = None) -> list[Candidate]:
         """Return fused candidates, ranked by combined score.
 
-        `alpha`      : weight on dense (1 - alpha goes to BM25). Lets us A/B
-                       pure-vector vs pure-keyword vs blend without redeploys.
-        `embed_text` : optional override for the dense leg. Pass a HyDE-generated
-                       passage here while leaving `query` as the user's original
-                       string for BM25.
+        `alpha`: weight on dense (1 - alpha goes to BM25). Lets us A/B
+                 pure-vector vs pure-keyword vs blend without redeploys.
         """
         s = self._s
         a = s.hybrid_alpha if alpha is None else alpha
 
-        dense = self._dense_search(embed_text or query, s.top_k_dense)
+        dense = self._dense_search(query, s.top_k_dense)
         sparse = self._bm25_search(query, s.top_k_bm25)
 
         d_norm = _minmax(dense)
@@ -138,6 +133,10 @@ class HybridRetriever:
                     title=m["title"],
                     section=m["section"],
                     score=fused[cid],
+                    page=int(m.get("page") or 0),
+                    units=m.get("units") or "",
+                    chunk_type=m.get("chunk_type") or "prose",
+                    table_title=m.get("table_title") or "",
                 )
             )
         return out

@@ -15,7 +15,7 @@ import chromadb
 from rank_bm25 import BM25Okapi
 
 from app.config import get_settings
-from app.ingestion.chunker import Chunk
+from app.ingestion.pdf_chunker import Chunk
 from app.rag.embeddings import get_embedder
 
 
@@ -33,11 +33,26 @@ def _chroma_client(path: str) -> chromadb.PersistentClient:
     return chromadb.PersistentClient(path=path)
 
 
+def chunk_metadata(c: Chunk) -> dict:
+    """Chroma metadata for a chunk. Chroma rejects None values, so None -> ""."""
+    return {
+        "source_path": c.source_path,
+        "page": int(c.page),
+        "section": c.section or "",
+        "chunk_type": c.chunk_type or "",
+        "units": c.units or "",
+        "table_title": c.table_title or "",
+        "title": c.title or "",
+        "char_start": int(c.char_start),
+        "char_end": int(c.char_end),
+    }
+
+
 def build_indices(chunks: list[Chunk]) -> dict:
     """Embed chunks into Chroma and build a parallel BM25 index on disk."""
     s = get_settings()
     if not chunks:
-        raise ValueError("No chunks supplied - did ingestion find any markdown files?")
+        raise ValueError("No chunks supplied - did ingestion find any PDF content?")
 
     embedder = get_embedder()
     client = _chroma_client(s.chroma_path)
@@ -51,16 +66,7 @@ def build_indices(chunks: list[Chunk]) -> dict:
 
     ids = [c.chunk_id for c in chunks]
     texts = [c.text for c in chunks]
-    metadatas = [
-        {
-            "source_path": c.source_path,
-            "title": c.title,
-            "section": c.section,
-            "char_start": c.char_start,
-            "char_end": c.char_end,
-        }
-        for c in chunks
-    ]
+    metadatas = [chunk_metadata(c) for c in chunks]
 
     # Embed in batches so we can show progress on large corpora.
     BATCH = 64
