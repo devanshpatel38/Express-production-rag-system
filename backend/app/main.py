@@ -13,14 +13,11 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.routers import chat, health
-from app.rag.idle_manager import start_idle_monitor, stop_idle_monitor
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    start_idle_monitor()
     yield
-    stop_idle_monitor()
 
 
 def create_app() -> FastAPI:

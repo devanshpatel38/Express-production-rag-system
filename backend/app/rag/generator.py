@@ -7,7 +7,7 @@ Two methods on every generator:
 - `generate`: synchronous, returns the full string (used by the eval harness and
   the legacy /chat endpoint).
 - `stream`: yields tokens for SSE delivery to the browser. The token stream is
-  *only* the answer text - sources and the healing trace ride alongside the
+  *only* the answer text - sources ride alongside the
   answer over the SSE channel via separate event types, not inside the token
   stream itself.
 """

@@ -1,24 +1,20 @@
 """Chat endpoints.
 
   POST /chat         : synchronous, returns full ChatResponse JSON.
-                       Used by the eval harness and by clients that don't want SSE.
-  POST /chat/stream  : Server-Sent Events. Emits healing events as they happen,
-                       then streams the answer token-by-token, then a final
-                       payload with sources and the full trace.
-
-Both share the same request schema. The SSE endpoint always runs the self-healing
-pipeline (streaming the naive path adds complexity for no real benefit).
+  POST /chat/stream  : Server-Sent Events. Streams answer tokens, then a final
+                       payload with sources and latency.
 """
 from __future__ import annotations
 
 import json
+import time
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.models.schemas import ChatRequest, ChatResponse
-from app.rag.pipeline import run_pipeline, stream_self_healing
-from app.rag.idle_manager import record_request
+from app.rag.generator import get_generator
+from app.rag.pipeline import _sources_from, retrieve_and_rerank, run_pipeline
 
 
 router = APIRouter(tags=["chat"])
@@ -26,59 +22,44 @@ router = APIRouter(tags=["chat"])
 
 @router.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest) -> ChatResponse:
-    record_request()  # reset idle timer on every request
     try:
         result = run_pipeline(
             query=req.query,
             history=req.history,
             top_k=req.top_k,
             use_reranker=req.use_reranker,
-            use_self_healing=req.use_self_healing,
-            use_hyde=req.use_hyde,
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=f"Index not ready: {e}") from e
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
-    return ChatResponse(
-        answer=result.answer,
-        sources=result.sources,
-        latency_ms=result.latency_ms,
-        trace=result.trace,
-        from_cache=result.from_cache,
-        fallback=result.fallback,
-        attempts=result.attempts,
-    )
+    return ChatResponse(answer=result.answer, sources=result.sources, latency_ms=result.latency_ms)
 
 
 def _sse_format(event_type: str, payload: dict) -> str:
-    """Format one SSE message."""
     return f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
 
 
 @router.post("/chat/stream")
 def chat_stream(req: ChatRequest):
-    """SSE endpoint. Browser EventSource doesn't speak POST natively, so the
-    frontend uses fetch() + a ReadableStream reader. The events we emit:
-
-      event: event   -> a HealingEvent dict (each loop step)
-      event: token   -> a fragment of the answer text
-      event: final   -> the full ChatResponse payload at the end
-      event: error   -> something blew up; payload has {message}
-    """
-    record_request()  # reset idle timer — same as /chat, prevents VPS cron from killing us
+    """SSE: `token` events (answer fragments), then one `final` event with the
+    ChatResponse payload; `error` if something blew up."""
 
     def gen():
         try:
-            for event_type, payload in stream_self_healing(
-                query=req.query,
-                history=req.history,
-                top_k=req.top_k,
-                use_reranker=req.use_reranker,
-                use_hyde=req.use_hyde,
-            ):
-                yield _sse_format(event_type, payload)
+            started = time.perf_counter()
+            _, top = retrieve_and_rerank(req.query, req.top_k, req.use_reranker)
+            parts: list[str] = []
+            for tok in get_generator().stream(req.query, top, req.history):
+                parts.append(tok)
+                yield _sse_format("token", {"text": tok})
+            final = ChatResponse(
+                answer="".join(parts),
+                sources=_sources_from(top),
+                latency_ms=int((time.perf_counter() - started) * 1000),
+            )
+            yield _sse_format("final", final.model_dump())
         except FileNotFoundError as e:
             yield _sse_format("error", {"message": f"Index not ready: {e}"})
         except Exception as e:
@@ -87,10 +68,5 @@ def chat_stream(req: ChatRequest):
     return StreamingResponse(
         gen(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            # Nginx/Cloudflare buffer SSE by default; this header tells them not to.
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )
