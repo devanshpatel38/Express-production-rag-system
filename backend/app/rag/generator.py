@@ -21,22 +21,35 @@ from app.models.schemas import ChatMessage
 from app.rag.retriever import Candidate
 
 
-SYSTEM_PROMPT = """You are an assistant that answers questions about the Express.js web framework using the provided documentation excerpts.
+SYSTEM_PROMPT = """You are an assistant that answers questions about the Apple iMac Product Environmental Report using only the provided report excerpts.
 
 Rules:
-- Answer ONLY from the provided context. If the context does not contain the answer, say so plainly.
-- Be concise. Show short code examples when they appear in the context.
-- Cite sources inline using the format [#1], [#2] matching the numbered context blocks.
-- If the user asks something off-topic (not about Express.js), redirect them politely.
+- Answer ONLY from the provided context. If the report excerpts do not contain the answer, say so plainly (e.g. "The iMac Product Environmental Report does not state this."). Never invent, estimate, or recall figures from outside knowledge.
+- Always give exact figures WITH their units (for example "346 kg CO2e" or "0.27 W"). Never state a bare number. Copy values exactly as written in the context, and use the units shown with each excerpt.
+- Cite the page number for every figure or claim using the format [#1, p. 7], matching the numbered context blocks, and make clear the figures come from the iMac Product Environmental Report.
+- Be accurate about environmental metrics (carbon footprint, energy use and efficiency, materials, recycled content, packaging, etc.). Do not mix up different metrics, product configurations, or life-cycle phases.
+- Be concise. If the user asks something unrelated to the iMac Product Environmental Report, redirect them politely.
 """
 
 
 def _format_context(candidates: list[Candidate]) -> str:
     blocks = []
     for i, c in enumerate(candidates, start=1):
-        header = f"[#{i}] {c.section} ({c.source_path})"
+        parts = [f"[#{i}]", f"Page {c.page}"]
+        if c.section:
+            parts.append(f"Section: {c.section}")
+        if c.table_title:
+            parts.append(f"Table: {c.table_title}")
+        if c.units:
+            parts.append(f"Units: {c.units}")
+        header = " | ".join(parts)
         blocks.append(f"{header}\n{c.text}")
     return "\n\n---\n\n".join(blocks)
+
+
+def build_user_message(query: str, candidates: list[Candidate]) -> str:
+    """The single user-turn template shared by every provider."""
+    return f"Context:\n{_format_context(candidates)}\n\nQuestion: {query}"
 
 
 def _format_history(history: list[ChatMessage]) -> list[dict]:
@@ -58,8 +71,7 @@ class _OpenAIGenerator:
         self._model = model
 
     def _build_messages(self, query: str, candidates: list[Candidate], history: list[ChatMessage]) -> list[dict]:
-        context = _format_context(candidates)
-        user_msg = f"Context:\n{context}\n\nQuestion: {query}"
+        user_msg = build_user_message(query, candidates)
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         messages.extend(_format_history(history))
         messages.append({"role": "user", "content": user_msg})
@@ -106,15 +118,13 @@ class _GeminiGenerator:
 
     def generate(self, query: str, candidates: list[Candidate], history: list[ChatMessage]) -> str:
         chat = self._chat_with_history(history)
-        context = _format_context(candidates)
-        user_msg = f"Context:\n{context}\n\nQuestion: {query}"
-        resp = chat.send_message(user_msg, generation_config={"temperature": 0.2, "max_output_tokens": 600})
+        user_msg = build_user_message(query, candidates)
+        resp = chat.send_message(user_msg,generation_config={"temperature": 0.2, "max_output_tokens": 600})
         return resp.text or ""
 
     def stream(self, query: str, candidates: list[Candidate], history: list[ChatMessage]) -> Iterator[str]:
         chat = self._chat_with_history(history)
-        context = _format_context(candidates)
-        user_msg = f"Context:\n{context}\n\nQuestion: {query}"
+        user_msg = build_user_message(query, candidates)
         resp = chat.send_message(
             user_msg,
             generation_config={"temperature": 0.2, "max_output_tokens": 600},
