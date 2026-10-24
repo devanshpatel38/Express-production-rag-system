@@ -1,84 +1,134 @@
 {
   "dataset_version": "1.0",
-  "description": "Hand-curated eval set for Express.js docs RAG. Each item has a question and a ground-truth answer plus reference source paths. Ground-truth answers are intentionally short - we score on whether the model captures the key fact, not exact wording.",
+  "description": "Hand-verified gold set for the iMac Product Environmental Report (Oct 2024). reference_pages are 1-based PDF pages checked against the PDF text.",
   "items": [
     {
-      "id": "routing-basic",
-      "question": "How do I define a GET route in Express?",
-      "ground_truth": "Use app.get(path, handler), where path is a string or pattern and handler is a function taking req and res. Example: app.get('/', (req, res) => res.send('hello')).",
-      "reference_sources": ["en/starter/basic-routing.md", "en/guide/routing.md"]
+      "id": "footprint-256",
+      "question": "What is the total product carbon footprint of the iMac (two ports) 256GB?",
+      "ground_truth": "The total product footprint of the iMac (two ports) 256GB is 346 kg CO2e.",
+      "reference_pages": [
+        10
+      ]
     },
     {
-      "id": "middleware-order",
-      "question": "Does the order in which middleware is defined matter?",
-      "ground_truth": "Yes. Middleware functions execute in the order they are defined via app.use or the routing methods. Earlier middleware can short-circuit later ones by not calling next().",
-      "reference_sources": ["en/guide/using-middleware.md", "en/guide/writing-middleware.md"]
+      "id": "footprint-512-4port",
+      "question": "What is the carbon footprint of the iMac (four ports) 512GB configuration?",
+      "ground_truth": "The iMac (four ports) 512GB has a carbon footprint of 391 kg CO2e.",
+      "reference_pages": [
+        10
+      ]
     },
     {
-      "id": "error-middleware-signature",
-      "question": "What is the signature of an Express error-handling middleware?",
-      "ground_truth": "Error-handling middleware takes four arguments: (err, req, res, next). The four-argument signature is what Express uses to identify it as an error handler.",
-      "reference_sources": ["en/guide/error-handling.md"]
+      "id": "footprint-lifecycle",
+      "question": "What is the life cycle breakdown of the iMac (two ports) 256GB carbon footprint by phase?",
+      "ground_truth": "Production 50%, transportation 5%, product use 45%, and end-of-life processing less than 1%.",
+      "reference_pages": [
+        10
+      ]
     },
     {
-      "id": "req-query-vs-params",
-      "question": "What is the difference between req.query and req.params?",
-      "ground_truth": "req.params holds route parameters parsed from the URL path (e.g. /users/:id), while req.query holds the parsed query-string values (e.g. ?sort=asc).",
-      "reference_sources": ["en/4x/api.md", "en/guide/routing.md"]
+      "id": "baseline-emissions",
+      "question": "What are the baseline emissions for iMac and how much were emissions reduced?",
+      "ground_truth": "Baseline emissions are 445 kg; the reduction is 99 kg, bringing iMac emissions to 346 kg.",
+      "reference_pages": [
+        2
+      ]
     },
     {
-      "id": "static-files",
-      "question": "How do I serve static files from a directory called public?",
-      "ground_truth": "Use the built-in middleware express.static: app.use(express.static('public')). You can also mount it at a virtual path: app.use('/static', express.static('public')).",
-      "reference_sources": ["en/starter/static-files.md"]
+      "id": "power-idle-115",
+      "question": "What is the iMac's power consumption in Idle with the display on at 115V?",
+      "ground_truth": "20.6 W at 115V in the Idle - Display On mode.",
+      "reference_pages": [
+        12
+      ]
     },
     {
-      "id": "json-body-parser",
-      "question": "How do I parse JSON request bodies in Express 4.16+?",
-      "ground_truth": "Use the built-in express.json() middleware: app.use(express.json()). The old body-parser package is no longer required for JSON.",
-      "reference_sources": ["en/4x/api.md"]
+      "id": "power-sleep-230",
+      "question": "How much power does the iMac consume in sleep mode at 230V?",
+      "ground_truth": "0.59 W at 230V in Sleep mode.",
+      "reference_pages": [
+        12
+      ]
     },
     {
-      "id": "router-mounting",
-      "question": "How do I create a modular sub-router and mount it under a path prefix?",
-      "ground_truth": "Create a router with express.Router(), attach routes to it, then mount it on the app with app.use('/prefix', router). Each router is a mini application.",
-      "reference_sources": ["en/guide/routing.md", "en/4x/api.md"]
+      "id": "power-off-100",
+      "question": "What is the iMac's power consumption when off at 100V?",
+      "ground_truth": "0.27 W at 100V in Off mode.",
+      "reference_pages": [
+        12
+      ]
     },
     {
-      "id": "next-error",
-      "question": "How do I pass an error to Express's error handler from a middleware?",
-      "ground_truth": "Call next(err) with any non-null argument. Express skips remaining non-error middleware and invokes the first error-handling middleware in the stack.",
-      "reference_sources": ["en/guide/error-handling.md"]
+      "id": "adapter-efficiency-230",
+      "question": "What is the power adapter efficiency of the iMac at 230V?",
+      "ground_truth": "The power adapter efficiency at 230V is 91.9%.",
+      "reference_pages": [
+        12
+      ]
     },
     {
-      "id": "production-best-practices",
-      "question": "What are some recommended things to do for an Express app in production?",
-      "ground_truth": "Set NODE_ENV=production, use a process manager (PM2, systemd) or run multiple instances behind a load balancer, gzip responses, don't use synchronous functions, log properly, and handle exceptions.",
-      "reference_sources": ["en/advanced/best-practice-performance.md"]
+      "id": "energy-star",
+      "question": "How does the iMac's energy use compare with the ENERGY STAR requirement?",
+      "ground_truth": "iMac uses 58 percent less energy than the requirement for ENERGY STAR.",
+      "reference_pages": [
+        7
+      ]
     },
     {
-      "id": "template-engine",
-      "question": "How do I configure a template engine like Pug in Express?",
-      "ground_truth": "Set the view engine and views directory via app.set('view engine', 'pug') and app.set('views', './views'). Then render templates with res.render('viewName', locals).",
-      "reference_sources": ["en/guide/using-template-engines.md"]
+      "id": "recycled-content",
+      "question": "What percentage of recycled content does the iMac contain, and what is 100 percent recycled in the stand?",
+      "ground_truth": "iMac contains more than 15 percent recycled content, and the stand uses 100 percent recycled aluminum.",
+      "reference_pages": [
+        4
+      ]
     },
     {
-      "id": "cookie-parsing",
-      "question": "Does Express parse cookies out of the box?",
-      "ground_truth": "No - Express does not include a built-in cookie parser. Use the cookie-parser middleware (or your own) to populate req.cookies.",
-      "reference_sources": ["en/resources/middleware/cookie-parser.md", "en/4x/api.md"]
+      "id": "recycled-plastic",
+      "question": "How much recycled plastic does the iMac use?",
+      "ground_truth": "At least 50 percent recycled plastic in 13 components.",
+      "reference_pages": [
+        4
+      ]
     },
     {
-      "id": "trust-proxy",
-      "question": "What does setting 'trust proxy' do in Express?",
-      "ground_truth": "It tells Express to honour the X-Forwarded-* headers (For, Proto, Host) set by an upstream reverse proxy, so req.ip and req.protocol reflect the original client rather than the proxy.",
-      "reference_sources": ["en/guide/behind-proxies.md", "en/4x/api.md"]
+      "id": "rare-earth",
+      "question": "What share of rare earth elements in the iMac magnets is recycled?",
+      "ground_truth": "100 percent recycled rare earth elements are used in all magnets, representing 99 percent of the total rare earth elements in the device.",
+      "reference_pages": [
+        4
+      ]
     },
     {
-      "id": "off-topic-control",
-      "question": "What is the best Italian restaurant in Ahmedabad?",
-      "ground_truth": "This question is unrelated to Express.js. The assistant should decline or redirect rather than hallucinate an answer.",
-      "reference_sources": []
+      "id": "packaging-recycled",
+      "question": "What percentage of the iMac fiber packaging is recycled content, and is the packaging plastic-free?",
+      "ground_truth": "The packaging contains 76 percent recycled content in fiber packaging; it is 100 percent fiber-based with no plastic except inks, coatings, and adhesives.",
+      "reference_pages": [
+        6
+      ]
+    },
+    {
+      "id": "def-low-carbon-electricity",
+      "question": "How does the report define low-carbon electricity?",
+      "ground_truth": "Low-carbon electricity refers to both renewable electricity and other fossil-free projects Apple considers low-carbon but not renewable, like nuclear and large-impact hydroelectricity. Apple accounts for the carbon impact of building and operating them, so they are low-carbon but not zero-carbon.",
+      "reference_pages": [
+        9
+      ]
+    },
+    {
+      "id": "def-use-phase",
+      "question": "How many years of power use does Apple assume for macOS devices in the carbon footprint use phase?",
+      "ground_truth": "Apple assumes a four-year period for power use by first owners of macOS, iPadOS, and tvOS devices.",
+      "reference_pages": [
+        9
+      ]
+    },
+    {
+      "id": "recover",
+      "question": "How can customers recover or recycle their iMac at end of life?",
+      "ground_truth": "Return the device through Apple Trade In, in-store or online; if it is not eligible for credit, Apple recycles it for free through take-back and recycling programs.",
+      "reference_pages": [
+        8
+      ]
     }
   ]
 }

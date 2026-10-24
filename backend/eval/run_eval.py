@@ -1,4 +1,4 @@
-"""Eval harness.
+"""Eval harness (iMac Product Environmental Report).
 
 Runs the dataset through the live pipeline, captures retrieved contexts and
 generated answers, then scores them with Ragas. The score thresholds in
@@ -18,7 +18,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.models.schemas import ChatMessage
 from app.rag.pipeline import run_pipeline
 
 
@@ -39,7 +38,7 @@ def _load_dataset() -> list[dict]:
         return json.load(f)["items"]
 
 
-def _run_pipeline_collect(items: list[dict]) -> list[dict]:
+def _run_pipeline_collect(items: list[dict], sleep_s: float = 0.0) -> list[dict]:
     """Run the live pipeline against each item and capture rows in Ragas's expected shape."""
     rows: list[dict] = []
     for it in items:
@@ -53,11 +52,12 @@ def _run_pipeline_collect(items: list[dict]) -> list[dict]:
                 "ground_truth": it["ground_truth"],
                 "_id": it["id"],
                 "_latency_ms": result.latency_ms,
-                "_retrieved_paths": [c.source_path for c in result.post_rerank],
-                "_reference_sources": it.get("reference_sources", []),
+                "_retrieved_pages": [c.page for c in result.post_rerank],
+                "_reference_pages": it.get("reference_pages", []),
             }
         )
-        time.sleep(20)
+        if sleep_s:
+            time.sleep(sleep_s)
     return rows
 
 
@@ -114,16 +114,11 @@ def _score_with_ragas(rows: list[dict]) -> dict:
 
 
 def _retrieval_hit_rate(rows: list[dict]) -> float:
-    """A simple sanity metric: does the retrieved set intersect any reference source?"""
-    relevant = [r for r in rows if r["_reference_sources"]]
+    """Page-based sanity metric: does any retrieved chunk's page match a reference page?"""
+    relevant = [r for r in rows if r["_reference_pages"]]
     if not relevant:
         return 1.0
-    hits = 0
-    for r in relevant:
-        refs = set(r["_reference_sources"])
-        got = set(r["_retrieved_paths"])
-        if refs & got:
-            hits += 1
+    hits = sum(1 for r in relevant if set(r["_reference_pages"]) & set(r["_retrieved_pages"]))
     return hits / len(relevant)
 
 
@@ -133,7 +128,7 @@ def _print_report(aggregate: dict, hit_rate: float, latency_p50: int) -> None:
     print(f"Latency p50: {latency_p50} ms")
     for k, v in aggregate.items():
         floor = THRESHOLDS.get(k)
-        flag = "" if floor is None or v >= floor else "  ⚠ BELOW THRESHOLD"
+        flag = "" if floor is None or v >= floor else "  !! BELOW THRESHOLD"
         print(f"  {k:20s} {v:.3f}{flag}")
 
 
@@ -150,10 +145,14 @@ def main() -> int:
         default=None,
         help="Where to write the JSON report. Defaults to eval/reports/<timestamp>.json.",
     )
+    parser.add_argument("--limit", type=int, default=None, help="Only run the first N items.")
+    parser.add_argument("--sleep", type=float, default=0.0, help="Seconds between items (rate limits).")
     args = parser.parse_args()
 
     items = _load_dataset()
-    rows = _run_pipeline_collect(items)
+    if args.limit:
+        items = items[: args.limit]
+    rows = _run_pipeline_collect(items, args.sleep)
 
     hit_rate = _retrieval_hit_rate(rows)
     latencies = sorted(r["_latency_ms"] for r in rows)
@@ -175,9 +174,11 @@ def main() -> int:
                 "rows": scored["rows"],
             },
             indent=2,
-        )
+            default=str,
+        ),
+        encoding="utf-8",
     )
-    print(f"\nReport saved → {out_path}")
+    print(f"\nReport saved -> {out_path}")
 
     if args.check_thresholds:
         failures = [k for k, v in aggregate.items() if v < THRESHOLDS[k]]
