@@ -31,10 +31,20 @@ def test_power_table_extracted(doc):
     assert list(t.rows[0].values) == ["100V", "115V", "230V"]
     assert t.units == "W"
     assert 0 < len(t.title) <= 80 and "Power consumption" in t.title
+    assert [r.label for r in t.rows] == [
+        "Off", "Sleep", "Idle-Display On", "Power adapter, no load", "Power adapter efficiency"]
+    assert len(t.rows) == 5
+    expected = [
+        {"100V": "0.27W", "115V": "0.27W", "230V": "0.29W"},
+        {"100V": "0.56W", "115V": "0.57W", "230V": "0.59W"},
+        {"100V": "20.5W", "115V": "20.6W", "230V": "20.9W"},
+        {"100V": "0.10W", "115V": "0.10W", "230V": "0.12W"},
+        {"100V": "91.1%", "115V": "91.5%", "230V": "91.9%"},
+    ]
+    assert [r.values for r in t.rows] == expected
     by_label = {r.label: r.values for r in t.rows}
     assert by_label["Off"] == {"100V": "0.27W", "115V": "0.27W", "230V": "0.29W"}
     assert by_label["Sleep"]["115V"] == "0.57W"
-    assert "Power adapter efficiency" in by_label
     x0, y0, x1, y1 = t.bbox
     assert y1 - y0 > 100 and x1 > x0
 

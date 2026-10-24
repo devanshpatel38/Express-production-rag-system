@@ -11,7 +11,9 @@ loose 1-row fragments. So ``find_tables`` is used only as an *anchor*:
 3. body rows are rebuilt from the page's word positions below the header,
    aligned to the header's column x-centres, so rows lost by find_tables are
    recovered. Row labels come from the words left of the first column; a row
-   with no label text or no value in every column is skipped (never invented).
+   with no label text or no value in every column is skipped via ``continue``
+   (never invented, and it never truncates later rows). The body ends at the
+   first vertical gap larger than ``_MAX_ROW_GAP``.
 """
 from __future__ import annotations
 
@@ -107,8 +109,10 @@ def _rebuild_rows(page, bbox, cols: list[str]) -> tuple[list[TableRow], float]:
         return [], bbox[3]
     header.sort(key=lambda w: w[0])
     centres = [(w[0] + w[2]) / 2 for w in header[: len(cols)]]
-    half = (centres[1] - centres[0]) / 2 if len(centres) > 1 else 30
+    gaps = [b - a for a, b in zip(centres, centres[1:])]
+    half = (min(gaps) if gaps else 60) / 2
     first_col_x0 = header[0][0]
+    max_dist = max(half, 1.0) * 1.5
     below = [w for w in words if w[1] >= bbox[3] - 1 and bbox[0] - 40 <= w[0] <= bbox[2] + 2]
     below.sort(key=lambda w: ((w[1] + w[3]) / 2, w[0]))
     lines: list[list] = []
@@ -124,17 +128,22 @@ def _rebuild_rows(page, bbox, cols: list[str]) -> tuple[list[TableRow], float]:
     for yc, ws in lines:
         if yc - last_y > _MAX_ROW_GAP + 6:
             break
+        last_y = yc
         label_words = [w for w in ws if w[2] <= first_col_x0 - 4 or (w[0] + w[2]) / 2 < centres[0] - half]
-        vals: dict[str, str] = {}
-        for c, x in zip(cols, centres):
-            hit = [w for w in ws if w not in label_words and abs((w[0] + w[2]) / 2 - x) <= half]
-            if hit:
-                vals[c] = " ".join(w[4] for w in sorted(hit, key=lambda w: w[0]))
+        vals_w: dict[int, list] = {}
+        for w in ws:
+            if w in label_words:
+                continue
+            xc = (w[0] + w[2]) / 2
+            i = min(range(len(centres)), key=lambda k: abs(centres[k] - xc))
+            if abs(centres[i] - xc) <= max_dist:  # nearest column, no force-fit of strays
+                vals_w.setdefault(i, []).append(w)
+        vals = {cols[i]: " ".join(w[4] for w in sorted(v, key=lambda w: w[0]))
+                for i, v in sorted(vals_w.items())}
         label = _clean(" ".join(w[4] for w in sorted(label_words, key=lambda w: w[0])))
         if not label or len(vals) != len(cols) or not any(_NUM_RE.search(v) for v in vals.values()):
-            break  # end of table body (footnotes, prose, ...)
+            continue  # malformed row: skip it, keep scanning
         rows.append(TableRow(label=label, values=vals))
-        last_y = yc
         bottom = max(w[3] for w in ws)
     return rows, bottom
 
