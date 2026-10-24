@@ -1,57 +1,51 @@
-"""Ingest CLI.
+"""Ingest CLI for the iMac PER report.
 
-Usage:
-    python -m scripts.ingest --source /path/to/expressjs.com/en
-    python -m scripts.ingest --source ./external/express-docs/en
+Usage (from backend/):
+    python -m scripts.ingest
+    python -m scripts.ingest --source ../iMac_PER_Oct2024.pdf
 
-Walks markdown files, chunks them, builds Chroma + BM25 indices, persists to disk.
-Run this once locally, commit the resulting `data/` (or rebuild on deploy).
+Pipeline: load_pdf -> chunk_document -> build_indices (Chroma + BM25 + docs_meta.json).
 """
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+from collections import Counter
 
 from app.config import get_settings
-from app.ingestion.chunker import chunk_markdown
 from app.ingestion.indexer import build_indices
-from app.ingestion.loader import iter_markdown_files
+from app.ingestion.pdf_chunker import chunk_document
+from app.ingestion.pdf_loader import load_pdf
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Ingest Express.js markdown docs into the RAG index.")
-    parser.add_argument(
-        "--source",
-        required=True,
-        help="Path to a directory containing Express markdown docs (e.g. cloned expressjs.com/en).",
-    )
-    args = parser.parse_args()
-
+def run(source: str | None = None) -> dict:
     s = get_settings()
-    root = Path(args.source).resolve()
-    print(f"Ingesting from: {root}")
-    print(f"Chunk size={s.chunk_size}, overlap={s.chunk_overlap}")
+    source = source or s.source_pdf_path
+    print(f"Ingesting from: {source}")
 
-    all_chunks = []
-    files_seen = 0
-    for rel_path, text in iter_markdown_files(root):
-        files_seen += 1
-        chunks = chunk_markdown(
-            text=text,
-            source_path=str(rel_path),
-            chunk_size=s.chunk_size,
-            chunk_overlap=s.chunk_overlap,
-        )
-        all_chunks.extend(chunks)
+    doc = load_pdf(source)
+    print(f"Loaded {len(doc.pages)} pages")
 
-    print(f"Processed {files_seen} files → {len(all_chunks)} chunks")
-    if not all_chunks:
-        raise SystemExit("No chunks produced - check the --source path points at markdown files.")
+    chunks = chunk_document(doc, chunk_size=s.chunk_size, chunk_overlap=s.chunk_overlap)
+    counts = Counter(c.chunk_type for c in chunks)
+    print(
+        f"Chunked into {len(chunks)} chunks "
+        f"(prose={counts.get('prose', 0)}, table_row={counts.get('table_row', 0)})"
+    )
+    if not chunks:
+        raise SystemExit("No chunks produced - check the --source path points at the iMac PDF.")
 
-    summary = build_indices(all_chunks)
+    summary = build_indices(chunks)
     print("Done.")
     for k, v in summary.items():
         print(f"  {k}: {v}")
+    print(f"  docs_meta_path: {s.docs_meta_path}")
+    return summary
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Ingest the iMac PER PDF into the RAG index.")
+    parser.add_argument("--source", default=None, help="PDF path (default: settings.source_pdf_path).")
+    run(parser.parse_args().source)
 
 
 if __name__ == "__main__":
