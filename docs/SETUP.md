@@ -1,127 +1,99 @@
 # Setup
 
-Local dev. Deployment is in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+Step by step, from a fresh clone to a running chatbot.
 
-## Prereqs
+## Prerequisites
 
-- Python 3.11+
-- Node 20+
-- Git
-- An API key for **one** LLM provider:
-  - [Gemini](https://aistudio.google.com/apikey) — free tier, default
-  - [OpenAI](https://platform.openai.com/api-keys) — paid
-- Optional: [Cohere](https://dashboard.cohere.com/api-keys) for the reranker (free tier covers dev)
+- Python 3.11
+- Node.js 20
+- A Gemini API key (default) or an OpenAI API key
+- Optional: a Cohere API key for reranking
 
-## 1. Clone
+The report PDF, `iMac_PER_Oct2024.pdf`, sits in the repo root.
 
-```bash
-git clone <your-fork-url> express-docs-rag
-cd express-docs-rag
-```
-
-## 2. Backend
+## 1. Backend
 
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate           # Windows: .venv\Scripts\activate
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
 cp .env.example .env
-# Open .env and set at minimum:
-#   LLM_PROVIDER=gemini
-#   GEMINI_API_KEY=...
-# Optionally set COHERE_API_KEY for reranking.
 ```
 
-The first run will download the sentence-transformers model (~80MB).
+Open `.env` and fill in:
 
-## 3. Get the Express docs
+| Key | Notes |
+| --- | --- |
+| `LLM_PROVIDER` | `gemini` (default) or `openai` |
+| `GEMINI_API_KEY` | needed when the provider is `gemini` |
+| `OPENAI_API_KEY` | needed when the provider is `openai` |
+| `COHERE_API_KEY` | optional; without it reranking passes the order through |
+| `RERANKER_ENABLED` | `true` by default; set `false` to skip reranking |
+| `EMBEDDING_BACKEND` | `local` by default (no key; downloads about 80 MB the first time) |
+| `SOURCE_PDF_PATH` | `../iMac_PER_Oct2024.pdf` by default |
 
-We use the official `expressjs/expressjs.com` repo as the corpus.
+## 2. Build the index
 
 ```bash
-# From the project root
-git clone --depth 1 https://github.com/expressjs/expressjs.com.git external/expressjs.com
+python -m scripts.ingest
 ```
 
-This gives you `external/expressjs.com/en/` — that's the directory we feed to
-the ingest script.
+`--source` defaults to `SOURCE_PDF_PATH` (`../iMac_PER_Oct2024.pdf`). To point at another
+copy: `python -m scripts.ingest --source path/to/report.pdf`.
 
-## 4. Build the index
+The script prints the page count and the chunk counts (prose and table rows), then writes:
+
+- `data/chroma/`
+- `data/bm25.pkl`
+- `data/docs_meta.json`
+
+The report produces 50 chunks over 12 pages. These three files must exist before the server
+can answer questions.
+
+## 3. Run the server
 
 ```bash
-cd backend
-python -m scripts.ingest --source ../external/expressjs.com/en
-```
-
-Expected output:
-
-```
-Ingesting from: /abs/path/external/expressjs.com/en
-Chunk size=700, overlap=120
-Processed 73 files → 1234 chunks
-  embedded 64/1234
-  ...
-Done.
-  chunks: 1234
-  vector_dim: 384
-  chroma_path: ./data/chroma
-  bm25_path: ./data/bm25.pkl
-```
-
-The `backend/data/` directory now holds the persisted indices.
-
-## 5. Serve
-
-```bash
-# Still in backend/
 uvicorn app.main:app --reload --port 8000
 ```
 
-Sanity-check:
+Check it:
 
 ```bash
 curl http://localhost:8000/health
-# {"status":"ok","indexed_chunks":1234,"llm_provider":"gemini","reranker_enabled":true}
-
-curl -X POST http://localhost:8000/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"How do I define a GET route?"}'
+# {"status":"ok","indexed_chunks":50, ...}
 ```
 
-## 6. Frontend
+## 4. Frontend
 
 In a new terminal:
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env.local
-# NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 should already be correct.
+cp .env.example .env.local     # NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000 and ask something like "How much electricity does the iMac use
+in sleep mode?". The sources panel shows the page and units behind the answer.
 
-## 7. Run the eval (optional but recommended)
+Other frontend commands: `npm run build`, `npm run typecheck`, `npm run lint`.
+
+## 5. Tests and eval
 
 ```bash
 cd backend
+pytest
 python -m eval.run_eval
 ```
 
-You'll see the four Ragas metrics plus retrieval hit-rate and p50 latency,
-and a JSON report saved to `eval/reports/`.
+See [`EVAL.md`](EVAL.md) for the eval and its scoring key.
 
-## Common gotchas
+## Troubleshooting
 
-- **`Index not ready` from /chat**: you didn't run ingestion (step 4), or you
-  ran it in a different working directory. The script saves to `./data/`
-  relative to wherever you ran it.
-- **OOM on ingest**: drop `CHUNK_SIZE` or run on a machine with >4GB free.
-- **`OPENAI_API_KEY missing` errors during eval**: Ragas needs a scoring LLM.
-  Either set `OPENAI_API_KEY`, or make sure `GEMINI_API_KEY` is set and the
-  `langchain-google-genai` package is installed (it's in requirements.txt).
-- **Cohere 429s**: the reranker free tier is rate-limited. Set
-  `RERANKER_ENABLED=false` to skip it during heavy local runs.
+- **`status: degraded` on /health** - the index has not been built. Run step 2.
+- **"Index not ready" in the chat** - same cause; run `python -m scripts.ingest`.
+- **Browser shows "backend offline"** - check that uvicorn is running and that
+  `CORS_ORIGINS` in `.env` includes `http://localhost:3000`.
+- **Changed `.env`** - restart uvicorn; settings are read once at the first request.

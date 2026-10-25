@@ -1,100 +1,91 @@
 # Architecture
 
-A deeper look at why the pieces are arranged the way they are.
-
-## Goals
-
-1. **Grounded** — answers must cite the docs, refuse off-topic, and not hallucinate.
-2. **Iterable** — every change (prompt, chunking, alpha, top-k) should be measurable.
-3. **Cheap** — sensible defaults that run on free tiers; nothing locks you in.
+The system answers questions about Apple's iMac Product Environmental Report. It has two
+parts: an **ingestion pipeline** that turns the PDF into a search index (run once), and a
+**request pipeline** that answers each question (retrieve, rerank, generate).
 
 ## Request lifecycle
 
 ```
-POST /chat
-  └─ pipeline.run_pipeline(query, history)
-       ├─ retriever.retrieve(query)
-       │    ├─ dense:  embed(query) → Chroma top-15 (cosine)
-       │    ├─ sparse: tokenise → BM25 top-15
-       │    └─ fuse:   min-max normalise both lists, weighted sum (alpha)
-       ├─ reranker.rerank(query, top-30, k=5)
-       │    └─ Cohere rerank-english-v3.0  (or passthrough if disabled)
-       └─ generator.generate(query, top-5, history)
-            └─ Gemini / OpenAI with the system prompt in generator.py
+POST /chat  or  POST /chat/stream
+  └─ retrieve_and_rerank(query)
+       ├─ HybridRetriever.retrieve(query)
+       │    ├─ dense:  embed(query) -> Chroma top-15 (cosine similarity)
+       │    ├─ sparse: tokenise -> BM25 top-15
+       │    └─ fuse:   min-max normalise both, weighted sum (HYBRID_ALPHA)
+       └─ Reranker.rerank(query, candidates, k)   <- Cohere, or passthrough
+  └─ Generator.generate / stream(query, top chunks, history)
+       └─ answer + sources (page, units, chunk type)
 ```
 
-## Why hybrid retrieval
+### 1. Hybrid retrieval
 
-Pure-vector search drops on rare tokens (method names, error codes, version strings).
-Pure-BM25 drops on paraphrase ("query string params" vs `req.query`). Real user
-queries land on both sides of that line, so we fuse:
+Two searches run on every question:
 
-- **Dense**: `all-MiniLM-L6-v2` (384-d, 80MB, runs on CPU in ~10ms per query)
-- **Sparse**: `rank_bm25` (Okapi BM25, in-process, pickled to disk)
-- **Fusion**: min-max normalise each list to `[0, 1]`, then `score = α·dense + (1-α)·sparse`
+- **Dense.** The question becomes a 384-number vector with a local sentence-transformers
+  MiniLM model. ChromaDB returns the closest chunks.
+- **Sparse.** BM25 matches the exact words in the question. This catches precise terms and
+  numbers that vectors can blur.
 
-`α` is exposed as a setting (`HYBRID_ALPHA`) so we can A/B on the same eval set
-without redeploys. Default `0.5` was the best on our eval. Reciprocal Rank Fusion
-(RRF) is the other standard choice; weighted-sum gives us a more interpretable knob.
+The two score lists are each rescaled to 0-1 (min-max), then blended:
+`alpha * dense + (1 - alpha) * bm25`. `HYBRID_ALPHA` is the only knob: 0 is pure keyword,
+1 is pure vector, 0.5 is the default. A sidecar file, `docs_meta.json`, maps each chunk id
+to its full record so fused results come back with their text and metadata.
 
-## Why a reranker
+### 2. Reranking
 
-The hybrid retriever maximises **recall** — it casts a wide net of 30 candidates.
-Most of those are weakly relevant. A cross-encoder reranker scores `(query, chunk)`
-pairs *together* (bi-encoders embed them separately, which loses interaction signal)
-and pushes the truly best 5 to the top. The LLM only sees those 5.
+A Cohere cross-encoder reads the question and each candidate together and re-scores them,
+which is more precise than comparing vectors. The best `TOP_K_RERANK` chunks go on. If there
+is no Cohere key, or reranking is switched off, the fused order is used as-is.
 
-Empirically on the eval set: context_precision rose from ~0.42 (no reranker) to
-~0.71 (Cohere). It's the single highest-leverage component.
+### 3. Generation
 
-Cohere is just the simplest hosted option. A local cross-encoder
-(`BAAI/bge-reranker-base`, ~280MB) would work identically — the abstraction in
-`app/rag/reranker.py` makes the swap a one-file change.
+The generator builds a prompt from the kept chunks and the chat history and asks the model
+to answer only from that context. Gemini and OpenAI sit behind one `Generator` interface and
+share one prompt, so results are comparable across providers. The answer cites the page and
+the units of each figure.
 
-## Chunking strategy
+`/chat` returns the whole answer as JSON. `/chat/stream` sends Server-Sent Events: `token`
+events while the answer is written, then one `final` event with the answer, sources and
+latency. Each source has its page, units and chunk type.
 
-Docs are not arbitrary prose — they have a heading hierarchy that's semantically
-meaningful. The chunker:
+## Ingestion pipeline
 
-1. Strips YAML frontmatter (Express docs use Jekyll).
-2. Slides a 700-char window with 120-char overlap.
-3. Snaps the right edge to the nearest paragraph break (`\n\n`) within 200 chars
-   to avoid cutting mid-sentence.
-4. Carries the nearest H1/H2/H3 breadcrumb into each chunk's metadata
-   (`section: "Guide > Routing > Route paths"`), which the prompt surfaces to
-   the LLM as part of each context block.
+```
+iMac_PER_Oct2024.pdf
+  └─ pdf_loader.load_pdf
+       per page:
+         pdf_spans   extract text blocks (drop superscript footnote markers)
+         pdf_tables  find genuine tables
+         (blocks inside tables are removed from the prose)
+         pdf_layout  put blocks in reading order
+       once for the document:
+         pdf_text    remove the running header
+         pdf_text    normalise each page
+  └─ pdf_chunker.chunk_document   prose windows + table-row chunks
+  └─ indexer.build_indices        Chroma + bm25.pkl + docs_meta.json
+```
 
-The numbers are tuned to Express's average paragraph length. A different corpus
-would want different numbers — the eval harness tells you when to retune.
+| Module | What it does |
+| --- | --- |
+| `pdf_spans.py` | Reads text span by span. Numeric-only spans much smaller than the body text are footnote markers and are dropped, so "electricity9" becomes "electricity". Small chemical subscripts (CO2e) and real figures ("391 kg CO2e") are kept. |
+| `pdf_text.py` | Repairs garbled characters, turns non-breaking spaces into spaces, rejoins words split by a line-end hyphen (never across digits), and collapses stray whitespace while keeping paragraphs. Detects the repeating "iMac \| Product Environmental Report N" header, which is removed. |
+| `pdf_layout.py` | Finds the column gutter from the blocks' own positions. A block that crosses the gutter splits the page into bands; inside a band the left column is read before the right. |
+| `pdf_tables.py` | Accepts only strictly validated grids. PyMuPDF's table finder is used as an anchor for the header, and rows are rebuilt from word positions aligned to the header columns. In this report the one real table is the power-consumption table (modes by 100V / 115V / 230V). |
+| `pdf_loader.py` | Runs the steps above and produces, per page, the prose, the tables and the section name (the running section becomes the page's breadcrumb). |
+| `pdf_chunker.py` | Cuts prose with a sliding window (`CHUNK_SIZE` 700, `CHUNK_OVERLAP` 120) and turns each table row into its own key-value chunk with its units. |
+| `indexer.py` | Embeds the chunks into ChromaDB, builds the BM25 index, and writes the sidecar record file. |
 
-## Why two separate indices on disk
+Each chunk carries a 1-based page number, section, chunk type (`prose` or `table_row`),
+units, table title and source file. The built index holds 50 chunks over 12 pages.
 
-Chroma persists vectors and their metadata; BM25 needs the raw token lists.
-Keeping the BM25 index in a separate pickle file lets us rebuild either side
-independently and keeps the Chroma collection clean.
+## Data on disk (`backend/data/`)
 
-`docs_meta.json` is a sidecar lookup — chunk_id → full chunk record — so the
-fusion stage doesn't need a round-trip to Chroma for metadata it already had
-at ingest time.
+- `chroma/` - the persistent vector store
+- `bm25.pkl` - the BM25 index (`{bm25, ids}`)
+- `docs_meta.json` - chunk id to full chunk record
 
-## LLM abstraction
+## Frontend
 
-`app/rag/generator.py` has one `Generator` protocol with two implementations.
-Provider is chosen at startup via env var. This isn't over-engineering — it
-lets us:
-
-- Run eval against multiple providers without code edits.
-- Use the cheap provider for dev and the strong one for prod.
-- Fall back when one provider is rate-limiting.
-
-The same prompt goes through both paths so the eval reflects production.
-
-## What's deliberately out of scope
-
-- **Streaming responses**: would muddy the source-attribution payload. Skipped for now.
-- **User auth / multi-tenant**: this is a single-corpus public demo.
-- **Query rewriting / HyDE**: would help on ambiguous follow-ups but adds an
-  LLM call per turn. Worth measuring before adding.
-- **Embedding cache**: corpus is small enough that startup is fast; not needed yet.
-- **Observability stack**: latency is captured per request; a real prod build
-  would wire OpenTelemetry → Grafana.
+A Next.js 14 app. `src/lib/api.ts` is the typed wrapper for all backend calls. Chat answers
+stream in through the SSE route, and the sources panel shows each source's page and units.
