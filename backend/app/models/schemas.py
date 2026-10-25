@@ -19,10 +19,13 @@ class ChatRequest(BaseModel):
 
 class Source(BaseModel):
     chunk_id: str
-    source_path: str  # original markdown file path
+    source_path: str  # source document (PDF) filename
     title: str
     snippet: str
     score: float
+    page: int = 0
+    units: str = ""
+    chunk_type: str = "prose"
 
 
 class ChatResponse(BaseModel):

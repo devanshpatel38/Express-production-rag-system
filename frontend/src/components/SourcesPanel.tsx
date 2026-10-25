@@ -70,6 +70,15 @@ export function SourcesPanel({ open, onClose, sources, question, latency_ms, rer
                   <span className="lbl">score</span>
                 </div>
               </div>
+              <div className="source-tags">
+                <span className="source-tag">p. {s.page}</span>
+                {s.units && <span className="source-tag">{s.units}</span>}
+                {s.chunk_type && s.chunk_type !== "prose" && (
+                  <span className="source-tag source-tag-type">
+                    {s.chunk_type === "table_row" ? "table" : s.chunk_type}
+                  </span>
+                )}
+              </div>
               <div className="source-snippet">
                 {s.title && <strong>{s.title} — </strong>}
                 {s.snippet}

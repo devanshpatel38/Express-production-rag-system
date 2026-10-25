@@ -9,14 +9,14 @@ from app.rag.retriever import Candidate
 @dataclass
 class RichCandidate(Candidate):
     page: int = 0
-    units: tuple = ()
+    units: str = ""
     chunk_type: str = "text"
 
 
 def _rich(i: int) -> RichCandidate:
     return RichCandidate(
         chunk_id=f"c{i}", text=f"t{i}", source_path="a.pdf", title="T", section="S",
-        score=0.1, page=i, units=("mm",), chunk_type="table",
+        score=0.1, page=i, units="mm", chunk_type="table",
     )
 
 
@@ -30,7 +30,7 @@ def test_cohere_reranker_preserves_all_fields():
     for c, score in zip(out, (0.9, 0.4)):
         n = int(c.chunk_id[1])
         assert isinstance(c, RichCandidate)
-        assert (c.page, c.units, c.chunk_type) == (n, ("mm",), "table")
+        assert (c.page, c.units, c.chunk_type) == (n, "mm", "table")
         assert c.score == score
         assert (c.text, c.title, c.section, c.source_path) == (f"t{n}", "T", "S", "a.pdf")
 

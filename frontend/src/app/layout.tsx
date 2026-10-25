@@ -15,9 +15,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Express Docs · RAG",
+  title: "iMac Environmental Report · RAG",
   description:
-    "Ask questions about the Express.js framework. Hybrid retrieval + cross-encoder reranking over the official docs.",
+    "Ask questions about the Apple iMac Product Environmental Report. Hybrid retrieval + cross-encoder reranking with page-cited answers.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

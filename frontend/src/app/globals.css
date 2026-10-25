@@ -1082,6 +1082,16 @@ body {
 .source-score .num { color: var(--text); font-weight: 600; font-size: 13px; }
 .source-score .lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-3); }
 
+.source-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 6px; }
+.source-tag {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px; letter-spacing: 0.04em;
+  padding: 1px 7px; border-radius: 4px;
+  border: 1px solid var(--border); color: var(--text-2);
+  background: var(--surface-muted);
+}
+.source-tag-type { color: var(--accent); border-color: var(--accent-soft-strong); background: var(--accent-soft); }
+
 .source-snippet {
   background: var(--surface-muted);
   border: 1px solid var(--border);
@@ -1127,22 +1137,6 @@ body {
 /* ═══════════════════════════════════════════════════════════
    Self-healing RAG — header pill, live cursor, toggles, trace
    ═══════════════════════════════════════════════════════════ */
-
-/* "self-healing on" header pill */
-.header-pill.heal {
-  border-color: var(--accent-soft-strong);
-  background: var(--accent-soft);
-}
-.header-pill.heal .lbl { color: var(--accent); }
-.header-pill.heal .num { color: var(--accent); font-weight: 600; }
-
-/* Low-confidence (fallback) tag in the assistant head */
-.assistant-head .fallback-tag {
-  display: inline-flex; align-items: center; gap: 5px; color: #B45309;
-}
-.assistant-head .fallback-tag::before {
-  content: ""; width: 4px; height: 4px; border-radius: 50%; background: #B45309;
-}
 
 /* Blinking cursor while the answer streams in */
 .stream-cursor {

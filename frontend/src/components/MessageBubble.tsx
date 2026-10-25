@@ -2,8 +2,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Source, HealingEvent } from "@/lib/api";
-import { HealingTrace } from "@/components/HealingTrace";
+import type { Source } from "@/lib/api";
 
 interface Props {
   content: string;
@@ -11,12 +10,6 @@ interface Props {
   latency_ms?: number;
   reranked?: boolean;
   streaming?: boolean;
-  trace?: HealingEvent[];
-  fromCache?: boolean;
-  fallback?: boolean;
-  attempts?: number;
-  // Human-readable label of the pipeline stage currently running (live).
-  liveStage?: string;
   isPanelOpen?: boolean;
   onOpenSources?: () => void;
 }
@@ -35,11 +28,6 @@ export function MessageBubble({
   latency_ms,
   reranked,
   streaming,
-  trace,
-  fromCache,
-  fallback,
-  attempts,
-  liveStage,
   isPanelOpen,
   onOpenSources,
 }: Props) {
@@ -51,9 +39,9 @@ export function MessageBubble({
       <div className="assistant-head">
         {thinking ? (
           <>
-            <span className="role">{liveStage ? "healing" : "retrieving"}</span>
+            <span className="role">retrieving</span>
             <span>·</span>
-            <span className="latency">{liveStage ?? "querying index…"}</span>
+            <span className="latency">querying index…</span>
           </>
         ) : (
           <>
@@ -71,12 +59,6 @@ export function MessageBubble({
               <>
                 <span>·</span>
                 <span className="reranked">reranked</span>
-              </>
-            )}
-            {fallback && (
-              <>
-                <span>·</span>
-                <span className="fallback-tag">low confidence</span>
               </>
             )}
           </>
@@ -98,16 +80,6 @@ export function MessageBubble({
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           {streaming && <span className="stream-cursor">▍</span>}
         </div>
-      )}
-
-      {trace && trace.length > 0 && (
-        <HealingTrace
-          trace={trace}
-          fromCache={fromCache}
-          fallback={fallback}
-          attempts={attempts}
-          live={streaming}
-        />
       )}
 
       {!streaming && sources && sources.length > 0 && (

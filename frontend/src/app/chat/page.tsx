@@ -9,7 +9,6 @@ import {
   health as fetchHealth,
   type ChatMessage,
   type Source,
-  type HealingEvent,
   type HealthResponse,
 } from "@/lib/api";
 import { MessageBubble } from "@/components/MessageBubble";
@@ -22,35 +21,14 @@ interface Turn {
   sources?: Source[];
   latency_ms?: number;
   reranked?: boolean;
-  trace?: HealingEvent[];
-  fromCache?: boolean;
-  fallback?: boolean;
-  attempts?: number;
 }
 
 const STARTER_QUESTIONS = [
-  { kind: "Routing",   text: "How do I set up middleware in Express?" },
-  { kind: "Errors",    text: "How does error-handling middleware work?" },
-  { kind: "Static",    text: "How do I serve static files from a directory?" },
-  { kind: "Lifecycle", text: "What's the difference between app.use and app.get?" },
+  { kind: "Carbon",    text: "What is the total carbon footprint of the iMac?" },
+  { kind: "Energy",    text: "How much power does the iMac use in sleep mode?" },
+  { kind: "Materials", text: "What recycled materials are used in the iMac?" },
+  { kind: "Design",    text: "How does Apple reduce the product's carbon footprint?" },
 ];
-
-// Verbose, human-readable label for the stage currently running (shown in the
-// in-flight bubble head). The HealingTrace timeline uses its own terse labels.
-const STAGE_LABEL: Record<string, string> = {
-  routing:      "routing your question",
-  cache_hit:    "cache hit — serving instantly",
-  hyde:         "generating hypothetical passage",
-  retrieval:    "searching documentation",
-  grading:      "grading retrieved chunks",
-  rerank:       "reranking results",
-  rewrite:      "rewriting query for better retrieval",
-  generation:   "generating answer",
-  faithfulness: "verifying answer accuracy",
-  retry:        "retrying with improved query",
-  give_up:      "returning best-effort answer",
-  done:         "finalising",
-};
 
 const GITHUB_URL = "https://github.com/devanshpatel38/Express-production-rag-system";
 
@@ -84,7 +62,6 @@ export default function ChatPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [useReranker, setUseReranker] = useState(true);
-  const [useHyde, setUseHyde] = useState(false);
   const [streaming, setStreaming] = useState(true);
   const [healthData, setHealthData] = useState<HealthResponse | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -133,7 +110,7 @@ export default function ChatPage() {
     setTurns((prev) => [
       ...prev,
       { id: userId, role: "user", content: q },
-      { id: asstId, role: "assistant", content: "", trace: [] },
+      { id: asstId, role: "assistant", content: "" },
     ]);
     setBusy(true);
     setInFlightId(asstId);
@@ -143,17 +120,11 @@ export default function ChatPage() {
 
     try {
       if (streaming) {
-        const live: HealingEvent[] = [];
         const final = await chatStream(
           q,
           history,
-          { useReranker, useHyde },
+          { useReranker },
           {
-            onEvent: (ev) => {
-              live.push(ev);
-              const snapshot = [...live];
-              patch((t) => ({ ...t, trace: snapshot }));
-            },
             onToken: (text) => {
               patch((t) => ({ ...t, content: t.content + text }));
             },
@@ -166,23 +137,15 @@ export default function ChatPage() {
           sources: final.sources,
           latency_ms: final.latency_ms,
           reranked: useReranker,
-          trace: final.trace,
-          fromCache: final.from_cache,
-          fallback: final.fallback,
-          attempts: final.attempts,
         }));
       } else {
-        const resp = await chat(q, history, { useReranker, useHyde });
+        const resp = await chat(q, history, { useReranker });
         patch((t) => ({
           ...t,
           content: resp.answer,
           sources: resp.sources,
           latency_ms: resp.latency_ms,
           reranked: useReranker,
-          trace: resp.trace,
-          fromCache: resp.from_cache,
-          fallback: resp.fallback,
-          attempts: resp.attempts,
         }));
       }
     } catch (e) {
@@ -192,7 +155,7 @@ export default function ChatPage() {
       setBusy(false);
       setInFlightId(null);
     }
-  }, [busy, turns, useReranker, useHyde, streaming]);
+  }, [busy, turns, useReranker, streaming]);
 
   // Auto-submit from ?q= URL param
   useEffect(() => {
@@ -221,13 +184,6 @@ export default function ChatPage() {
     return idx > 0 ? turns[idx - 1].content : "";
   })();
 
-  // Verbose label for the stage currently running on the in-flight turn.
-  const liveStageFor = (t: Turn): string | undefined => {
-    if (t.id !== inFlightId || !t.trace || t.trace.length === 0) return undefined;
-    const last = t.trace[t.trace.length - 1];
-    return STAGE_LABEL[last.stage] ?? last.stage;
-  };
-
   return (
     <div className="app">
       {/* ─── Header ─── */}
@@ -240,7 +196,7 @@ export default function ChatPage() {
             <span className="brand-logo">
               <Image src="/cogito-logo-short.svg" alt="" width={24} height={13} />
             </span>
-            <span>Express Docs</span>
+            <span>iMac Environmental Report</span>
             <span className="brand-tag">RAG</span>
           </Link>
         </div>
@@ -252,15 +208,6 @@ export default function ChatPage() {
                 <span className="lbl">indexed</span>
                 <span className="num">{healthData.indexed_chunks.toLocaleString()}</span>
               </span>
-              {healthData.self_healing_enabled && (
-                <span
-                  className="header-pill heal hide-md"
-                  title="Self-healing RAG: chunk grading, query rewriting, and faithfulness checks are active"
-                >
-                  <span className="lbl">self-healing</span>
-                  <span className="num">on</span>
-                </span>
-              )}
               <span className="header-pill llm hide-md">
                 <span className="lbl">llm</span>
                 <span className="num">{healthData.llm_provider}</span>
@@ -289,12 +236,12 @@ export default function ChatPage() {
           <div className="thread">
             {turns.length === 0 && (
               <div className="hero">
-                <div className="hero-eyebrow">Express.js · Official Docs</div>
-                <h1>Ask anything in the Express.js documentation.</h1>
+                <div className="hero-eyebrow">Apple · iMac Product Environmental Report</div>
+                <h1>Ask anything about the iMac's environmental impact.</h1>
                 <p>
-                  Self-healing retrieval-augmented answers grounded in the official expressjs/express docs.
-                  Hybrid search (dense + BM25), cross-encoder reranking, LLM chunk grading,
-                  query rewriting, and faithfulness checks — with a transparent healing trace.
+                  Retrieval-augmented answers grounded in Apple's iMac Product Environmental Report.
+                  Hybrid search (dense + BM25) and cross-encoder reranking find the right passages,
+                  and every answer cites the report page it came from.
                 </p>
                 <div className="chips">
                   {STARTER_QUESTIONS.map((q) => (
@@ -324,12 +271,7 @@ export default function ChatPage() {
                   sources={t.sources}
                   latency_ms={t.latency_ms}
                   reranked={t.reranked}
-                  trace={t.trace}
-                  fromCache={t.fromCache}
-                  fallback={t.fallback}
-                  attempts={t.attempts}
                   streaming={busy && t.id === inFlightId}
-                  liveStage={liveStageFor(t)}
                   isPanelOpen={panelOpen && panelTurnId === t.id}
                   onOpenSources={() => openPanel(t.id)}
                 />
@@ -365,7 +307,7 @@ export default function ChatPage() {
             <textarea
               ref={textareaRef}
               className="composer-input"
-              placeholder="Ask about routing, middleware, errors, request bodies…"
+              placeholder="Ask about carbon footprint, energy use, materials, recycling…"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -394,22 +336,6 @@ export default function ChatPage() {
                 <div className="toggle">
                   <button
                     type="button"
-                    className={"switch" + (useHyde ? " on" : "")}
-                    onClick={() => setUseHyde((v) => !v)}
-                    aria-pressed={useHyde}
-                    aria-label="Toggle HyDE"
-                  />
-                  <label
-                    className="toggle-label"
-                    onClick={() => setUseHyde((v) => !v)}
-                    title="Hypothetical Document Embeddings — embeds an imagined answer for better dense retrieval on vague queries."
-                  >
-                    hyde
-                  </label>
-                </div>
-                <div className="toggle">
-                  <button
-                    type="button"
                     className={"switch" + (streaming ? " on" : "")}
                     onClick={() => setStreaming((v) => !v)}
                     aria-pressed={streaming}
@@ -418,7 +344,7 @@ export default function ChatPage() {
                   <label
                     className="toggle-label"
                     onClick={() => setStreaming((v) => !v)}
-                    title="Stream the healing steps and answer live via Server-Sent Events."
+                    title="Stream the answer live via Server-Sent Events."
                   >
                     stream
                   </label>

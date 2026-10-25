@@ -24,6 +24,9 @@ def _sources_from(candidates: list[Candidate]) -> list[Source]:
             title=c.title,
             snippet=_snippet(c.text),
             score=round(c.score, 4),
+            page=c.page,
+            units=c.units,
+            chunk_type=c.chunk_type,
         )
         for c in candidates
     ]

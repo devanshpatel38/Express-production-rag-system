@@ -17,39 +17,15 @@ export interface Source {
   title: string;
   snippet: string;
   score: number;
-}
-
-// Mirrors backend HealingEvent (app/models/schemas.py).
-export type HealingStage =
-  | "routing"
-  | "cache_hit"
-  | "hyde"
-  | "retrieval"
-  | "grading"
-  | "rerank"
-  | "rewrite"
-  | "generation"
-  | "faithfulness"
-  | "retry"
-  | "give_up"
-  | "done";
-
-export interface HealingEvent {
-  stage: HealingStage;
-  attempt: number;
-  message: string;
-  score?: number | null;
-  detail?: Record<string, unknown> | null;
+  page: number;
+  units: string;
+  chunk_type: string;
 }
 
 export interface ChatResponse {
   answer: string;
   sources: Source[];
   latency_ms: number;
-  trace: HealingEvent[];
-  from_cache: boolean;
-  fallback: boolean;
-  attempts: number;
 }
 
 export interface HealthResponse {
@@ -57,15 +33,12 @@ export interface HealthResponse {
   indexed_chunks: number;
   llm_provider: string;
   reranker_enabled: boolean;
-  self_healing_enabled: boolean;
 }
 
 const API_BASE = "/api";
 
 interface ChatOpts {
   useReranker?: boolean;
-  useSelfHealing?: boolean;
-  useHyde?: boolean;
 }
 
 export async function chat(
@@ -80,8 +53,6 @@ export async function chat(
       query,
       history,
       use_reranker: opts?.useReranker,
-      use_self_healing: opts?.useSelfHealing,
-      use_hyde: opts?.useHyde,
     }),
   });
   if (!resp.ok) {
@@ -98,7 +69,6 @@ export async function chat(
 // resolves with the final ChatResponse-shaped payload.
 
 export interface StreamCallbacks {
-  onEvent?: (event: HealingEvent) => void;
   onToken?: (text: string) => void;
   onError?: (message: string) => void;
 }
@@ -116,7 +86,6 @@ export async function chatStream(
       query,
       history,
       use_reranker: opts?.useReranker,
-      use_hyde: opts?.useHyde,
     }),
   });
   if (!resp.ok || !resp.body) {
@@ -155,8 +124,7 @@ export async function chatStream(
         continue;
       }
 
-      if (evType === "event") callbacks.onEvent?.(payload as HealingEvent);
-      else if (evType === "token") callbacks.onToken?.(payload.text);
+      if (evType === "token") callbacks.onToken?.(payload.text);
       else if (evType === "final") final = payload as ChatResponse;
       else if (evType === "error") {
         const msg = payload.message ?? "stream error";
